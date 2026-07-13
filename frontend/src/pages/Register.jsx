@@ -1,0 +1,77 @@
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext.jsx";
+
+export default function Register() {
+  const { register } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      await register(form.name, form.email, form.password);
+      navigate("/problems");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={styles.wrap}>
+      <div className="card" style={styles.card}>
+        <h1 style={styles.h1}>Create an account</h1>
+        <p style={styles.sub}>Post problems, vote, build, and review — it's all one account.</p>
+
+        {error && <div className="error-banner">{error}</div>}
+
+        <form onSubmit={submit}>
+          <div className="field">
+            <label>Name</label>
+            <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div className="field">
+            <label>Email</label>
+            <input
+              type="email"
+              required
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+          </div>
+          <button className="btn btn-primary" style={{ width: "100%" }} disabled={busy}>
+            {busy ? "Creating account…" : "Sign up"}
+          </button>
+        </form>
+
+        <p style={styles.footer}>
+          Already have an account? <Link to="/login" style={{ fontWeight: 600 }}>Log in</Link>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  wrap: { display: "flex", justifyContent: "center", padding: "64px 20px" },
+  card: { width: 400, padding: 36 },
+  h1: { fontSize: 26, marginBottom: 8 },
+  sub: { fontSize: 14, color: "var(--text-dim)", marginBottom: 24 },
+  footer: { fontSize: 14, color: "var(--text-dim)", marginTop: 18, textAlign: "center" },
+};
