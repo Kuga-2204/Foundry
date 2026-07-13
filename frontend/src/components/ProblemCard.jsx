@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import VoteControl from "./VoteControl.jsx";
+import StatusBadge from "./StatusBadge.jsx";
+import { formatDate } from "../utils.js";
 
 export default function ProblemCard({ problem, onVote }) {
   return (
@@ -8,9 +10,12 @@ export default function ProblemCard({ problem, onVote }) {
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={styles.metaRow}>
-          <span style={styles.category}>{problem.category}</span>
+          <span style={styles.badges}>
+            <span style={styles.category}>{problem.category}</span>
+            <StatusBadge status={problem.status} />
+          </span>
           <span className="mono" style={styles.date}>
-            {new Date(problem.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            {formatDate(problem.created_at, { month: "short", day: "numeric" })}
           </span>
         </div>
 
@@ -21,10 +26,11 @@ export default function ProblemCard({ problem, onVote }) {
 
         <div style={styles.footer}>
           <span style={styles.footerItem}>by {problem.author_name}</span>
+          <span style={styles.footerItem}>{problem.followerCount} following</span>
           <span style={{ ...styles.footerItem, ...(problem.solutionCount > 0 ? styles.solved : {}) }}>
             {problem.solutionCount === 0
-              ? "No builds yet"
-              : `${problem.solutionCount} build${problem.solutionCount > 1 ? "s" : ""} submitted`}
+              ? "No solutions yet"
+              : `${problem.solutionCount} solution${problem.solutionCount > 1 ? "s" : ""}`}
           </span>
         </div>
       </div>
@@ -39,7 +45,8 @@ const styles = {
     padding: 20,
     marginBottom: 14,
   },
-  metaRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  metaRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10 },
+  badges: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
   category: {
     fontFamily: "var(--mono)",
     fontSize: 11.5,

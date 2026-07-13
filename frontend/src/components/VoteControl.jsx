@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 export default function VoteControl({ problem, onVote, size = "md" }) {
   const { user } = useAuth();
   const dim = size === "lg" ? 40 : 30;
-  const fontSize = size === "lg" ? 22 : 26;
+  const fontSize = size === "lg" ? 26 : 22;
 
   const cast = (type) => {
     if (!user) {
@@ -16,7 +16,7 @@ export default function VoteControl({ problem, onVote, size = "md" }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
       <button
-        aria-label="Upvote — I have this problem too"
+        aria-label="Upvote: I have this problem too"
         title="I have this problem too"
         onClick={() => cast(1)}
         style={{
@@ -31,7 +31,7 @@ export default function VoteControl({ problem, onVote, size = "md" }) {
         {problem.score}
       </span>
       <button
-        aria-label="Downvote — not relevant to me"
+        aria-label="Downvote: not relevant to me"
         title="Not relevant to me"
         onClick={() => cast(-1)}
         style={{

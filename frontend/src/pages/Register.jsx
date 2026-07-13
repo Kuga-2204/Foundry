@@ -27,7 +27,7 @@ export default function Register() {
     <div style={styles.wrap}>
       <div className="card" style={styles.card}>
         <h1 style={styles.h1}>Create an account</h1>
-        <p style={styles.sub}>Post problems, vote, build, and review — it's all one account.</p>
+        <p style={styles.sub}>Post problems, vote, review, and list your startup, all with one account.</p>
 
         {error && <div className="error-banner">{error}</div>}
 
