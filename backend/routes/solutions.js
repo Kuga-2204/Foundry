@@ -3,6 +3,7 @@ import db from "../db/index.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { hasStake } from "../lib/stake.js";
 import { notifyFollowers } from "../lib/notify.js";
+import { moderate } from "../lib/moderate.js";
 
 const router = Router();
 
@@ -69,6 +70,8 @@ router.post("/problem/:problemId", requireAuth, (req, res) => {
   if (cleanLink && !/^https?:\/\//i.test(cleanLink)) {
     return res.status(400).json({ error: "Link must start with http:// or https://." });
   }
+  const flagged = moderate(title, description);
+  if (flagged) return res.status(400).json({ error: flagged });
   const problem = db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.problemId);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 

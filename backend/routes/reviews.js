@@ -3,6 +3,7 @@ import db from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { hasStake } from "../lib/stake.js";
 import { notify } from "../lib/notify.js";
+import { moderate } from "../lib/moderate.js";
 
 const router = Router();
 
@@ -30,6 +31,8 @@ router.post("/solution/:solutionId", requireAuth, (req, res) => {
   if (!OUTCOMES.includes(outcome)) {
     return res.status(400).json({ error: "Say whether it solved your problem: solved, partial, or unsolved." });
   }
+  const flagged = moderate(feedback);
+  if (flagged) return res.status(400).json({ error: flagged });
 
   const solution = db.prepare("SELECT * FROM solutions WHERE id = ?").get(req.params.solutionId);
   if (!solution) return res.status(404).json({ error: "Solution not found." });
