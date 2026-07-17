@@ -1,13 +1,15 @@
 const BASE = "/api";
 
 async function request(path, { method = "GET", body, token } = {}) {
-  const headers = { "Content-Type": "application/json" };
+  // FormData sets its own multipart boundary; only JSON gets a content type.
+  const isForm = body instanceof FormData;
+  const headers = isForm ? {} : { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
   });
 
   const data = await res.json().catch(() => ({}));
@@ -29,8 +31,15 @@ export const api = {
   createProblem: (payload, token) => request("/problems", { method: "POST", body: payload, token }),
   vote: (id, type, token) => request(`/problems/${id}/vote`, { method: "POST", body: { type }, token }),
   followProblem: (id, token) => request(`/problems/${id}/follow`, { method: "POST", token }),
-  matchText: (text) => request("/problems/match", { method: "POST", body: { text } }),
+  // Token is optional but sent when present: it lets the backend credit the
+  // search appearance to the matched startup's analytics.
+  matchText: (text, token) => request("/problems/match", { method: "POST", body: { text }, token }),
+  similarProblems: (text, token) =>
+    request("/problems/similar", { method: "POST", body: { text }, token }),
   problemMatches: (id) => request(`/problems/${id}/matches`),
+  listComments: (problemId, token) => request(`/problems/${problemId}/comments`, { token }),
+  postComment: (problemId, payload, token) =>
+    request(`/problems/${problemId}/comments`, { method: "POST", body: payload, token }),
   commit: (id, startupId, note, token) =>
     request(`/problems/${id}/commit`, { method: "POST", body: { startup_id: startupId, note }, token }),
   ship: (id, startupId, token) =>
@@ -56,6 +65,7 @@ export const api = {
     request(`/startups/${id}`, { method: "PUT", body: payload, token }),
   claimStartup: (id, token) => request(`/startups/${id}/claim`, { method: "POST", token }),
   startupLeads: (id, token) => request(`/startups/${id}/leads`, { token }),
+  startupStats: (id, token) => request(`/startups/${id}/stats`, { token }),
 
   notifications: (token) => request("/notifications", { token }),
   markNotificationsRead: (token) => request("/notifications/read-all", { method: "POST", token }),

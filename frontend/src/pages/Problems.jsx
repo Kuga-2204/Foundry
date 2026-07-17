@@ -13,7 +13,7 @@ export default function Problems() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState(searchParams.get("search") || "");
 
-  const sort = searchParams.get("sort") || "top";
+  const sort = searchParams.get("sort") || "trending";
   const category = searchParams.get("category") || "All";
   const status = searchParams.get("status") || "All";
   const mine = searchParams.get("mine") === "true";
@@ -73,9 +73,15 @@ export default function Problems() {
     <div className="wrap" style={styles.wrap}>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.h1}>{mine ? "My problems" : "Browse problems"}</h1>
+          <h1 style={styles.h1}>
+            {mine ? "My problems" : sort === "trending" ? "Trending problems" : "Browse problems"}
+          </h1>
           <p style={styles.sub}>
-            {mine ? "Problems you've posted." : "Real problems from real people. Vote if you have it too, follow to hear when it gets solved."}
+            {mine
+              ? "Problems you've posted."
+              : sort === "trending"
+                ? "The most active problems on Solvyard right now."
+                : "Real problems from real people. Vote if you have it too, follow to hear when it gets solved."}
           </p>
         </div>
         <Link to="/post" className="btn btn-primary">Post a problem</Link>
@@ -93,6 +99,7 @@ export default function Problems() {
 
         <select value={sort} onChange={(e) => updateParam("sort", e.target.value)} style={styles.select}>
           <option value="top">Top voted</option>
+          <option value="trending">Trending</option>
           <option value="new">Newest</option>
           <option value="followed">Most followed</option>
           <option value="unsolved">Unsolved</option>

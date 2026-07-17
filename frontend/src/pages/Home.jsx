@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { api } from "../api.js";
+import StatusBadge from "../components/StatusBadge.jsx";
 
 export default function Home() {
   const { user } = useAuth();
@@ -7,11 +10,59 @@ export default function Home() {
   return (
     <div>
       <Hero user={user} />
+      <TrendingStrip />
       <Pipeline />
       <WhyBoth />
       <FinalCta user={user} />
       <Footer />
     </div>
+  );
+}
+
+/* ---------------- Trending: proof the board is alive ---------------- */
+function TrendingStrip() {
+  const [problems, setProblems] = useState([]);
+
+  useEffect(() => {
+    api
+      .listProblems({ sort: "trending" })
+      .then((d) => setProblems(d.problems.slice(0, 6)))
+      .catch(() => {});
+  }, []);
+
+  if (problems.length === 0) return null;
+
+  return (
+    <section style={s.trending}>
+      <div className="wrap">
+        <div style={s.trendingHead}>
+          <div>
+            <div style={s.trendingEyebrow} className="mono">TRENDING NOW</div>
+            <h2 style={s.trendingTitle}>What people are struggling with this week</h2>
+          </div>
+          <Link to="/problems?sort=trending" style={s.trendingAll}>
+            See all problems →
+          </Link>
+        </div>
+
+        <div style={s.trendingGrid}>
+          {problems.map((p) => (
+            <Link key={p.id} to={`/problems/${p.id}`} className="card" style={s.trendCard}>
+              <div style={s.trendTop}>
+                <span className="mono" style={s.trendCat}>{p.category}</span>
+                <StatusBadge status={p.status} />
+              </div>
+              <h3 style={s.trendTitle}>{p.title}</h3>
+              <div style={s.trendFoot}>
+                <span className="mono" style={s.trendScore}>↑ {p.score}</span>
+                <span>{p.followerCount} waiting</span>
+                {p.commentCount > 0 && <span>{p.commentCount} comments</span>}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -28,7 +79,7 @@ function Hero({ user }) {
             solving your <span style={{ color: "var(--spark)" }}>problem.</span>
           </h1>
           <p style={s.sub}>
-            Describe a problem from your daily life and Foundry matches you with startups
+            Describe a problem from your daily life and Solvyard matches you with startups
             already solving it. Nothing out there yet? List it, and you'll be the first to
             know when a startup commits to a fix.
           </p>
@@ -126,7 +177,7 @@ function Pipeline() {
     {
       n: "01",
       title: "Describe your problem",
-      body: "Type the frustration the way you'd complain about it to a friend. While you write, Foundry live-checks the startup directory for someone already solving it.",
+      body: "Type the frustration the way you'd complain about it to a friend. While you write, Solvyard live-checks the startup directory for someone already solving it.",
       accent: "var(--spark)",
     },
     {
@@ -152,7 +203,7 @@ function Pipeline() {
   return (
     <section style={s.pipeline}>
       <div className="wrap">
-        <h2 style={s.sectionTitle}>How Foundry works</h2>
+        <h2 style={s.sectionTitle}>How Solvyard works</h2>
         <p style={s.sectionSub}>From complaint to solution, with proof at every step.</p>
 
         <div style={s.stepsGrid}>
@@ -189,7 +240,7 @@ function WhyBoth() {
           <div style={s.whyEyebrow} className="mono">FOR STARTUPS</div>
           <h3 style={s.whyTitle}>Meet users describing the exact pain you solve.</h3>
           <p style={s.whyBody}>
-            List what you solve in plain language and Foundry routes matching problems to
+            List what you solve in plain language and Solvyard routes matching problems to
             your dashboard: real leads, in the user's own words, with vote counts that
             prove demand. Commit to an unsolved problem and everyone waiting on it becomes
             your launch audience.
@@ -222,7 +273,9 @@ function Footer() {
   return (
     <footer style={s.footer}>
       <div className="wrap" style={s.footerInner}>
-        <span className="mono" style={{ fontSize: 12.5 }}>◆ Foundry</span>
+        <span className="mono" style={{ fontSize: 12.5 }}>
+          solv<span style={{ color: "var(--signal)" }}>yard</span>
+        </span>
         <span style={{ fontSize: 12.5, color: "var(--text-dim)" }}>
           Problems in. Products out.
         </span>
@@ -240,6 +293,22 @@ const s = {
   sub: { fontSize: 16.5, lineHeight: 1.6, color: "var(--text-on-dark-dim)", maxWidth: 460, marginBottom: 32 },
   ctaRow: { display: "flex", gap: 14, flexWrap: "wrap" },
   schematic: { width: "100%", height: "auto", border: "1px solid var(--line-on-dark)", borderRadius: 4 },
+
+  trending: { padding: "64px 0", background: "var(--paper-dim)", borderBottom: "1.5px solid var(--line)" },
+  trendingHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 20, marginBottom: 28, flexWrap: "wrap" },
+  trendingEyebrow: { fontSize: 12, letterSpacing: 1.2, color: "var(--signal)", marginBottom: 10, fontWeight: 600 },
+  trendingTitle: { fontSize: 26, fontWeight: 700, lineHeight: 1.25 },
+  trendingAll: { fontSize: 14, fontWeight: 600, color: "var(--text-dim)", whiteSpace: "nowrap" },
+  trendingGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 },
+  trendCard: { padding: 18, display: "flex", flexDirection: "column", gap: 10, background: "#fff" },
+  trendTop: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  trendCat: { fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-dim)" },
+  trendTitle: {
+    fontSize: 15.5, fontWeight: 600, lineHeight: 1.4, flex: 1,
+    display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+  },
+  trendFoot: { display: "flex", gap: 14, fontSize: 12, color: "var(--text-dim)", alignItems: "center" },
+  trendScore: { fontWeight: 600, color: "var(--ink)" },
 
   pipeline: { padding: "88px 0", background: "var(--paper)" },
   sectionTitle: { fontSize: 32, fontWeight: 700, marginBottom: 10 },
