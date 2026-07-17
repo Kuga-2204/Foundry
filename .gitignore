@@ -9,5 +9,6 @@ frontend/.env
 *.log
 .DS_Store
 backend/db/*.sqlite*
+backend/uploads/
 .idea/
 .claude/settings.local.json

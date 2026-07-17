@@ -1,8 +1,12 @@
 import { Router } from "express";
 import db from "../db/index.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import { matchStartups } from "../lib/match.js";
+import { matchStartups, matchSimilarProblems } from "../lib/match.js";
 import { notify, notifyFollowers, follow } from "../lib/notify.js";
+import { maskAnonymous } from "../lib/anon.js";
+import { upload, kindOf } from "../lib/uploads.js";
+import { moderate } from "../lib/moderate.js";
+import { track } from "../lib/track.js";
 
 const router = Router();
 
@@ -37,6 +41,14 @@ function attachMeta(problem, userId) {
     .prepare("SELECT COUNT(*) AS c FROM problem_followers WHERE problem_id = ?")
     .get(problem.id).c;
 
+  const commentCount = db
+    .prepare("SELECT COUNT(*) AS c FROM comments WHERE problem_id = ?")
+    .get(problem.id).c;
+
+  const mediaCount = db
+    .prepare("SELECT COUNT(*) AS c FROM problem_media WHERE problem_id = ?")
+    .get(problem.id).c;
+
   let myVote = null;
   let hasStake = false;
   let isFollowing = false;
@@ -58,9 +70,12 @@ function attachMeta(problem, userId) {
     score: votes.up - votes.down,
     solutionCount,
     followerCount,
+    commentCount,
+    mediaCount,
     myVote,
     hasStake, // eligible to review solutions
     isFollowing,
+    isMine: !!userId && problem.user_id === userId,
   };
 }
 
@@ -70,7 +85,12 @@ function getFullProblem(id, userId) {
       `SELECT p.*, u.name AS author_name FROM problems p JOIN users u ON u.id = p.user_id WHERE p.id = ?`
     )
     .get(id);
-  return row ? attachMeta(row, userId) : null;
+  if (!row) return null;
+  const meta = attachMeta(row, userId);
+  meta.media = db
+    .prepare("SELECT id, file, kind FROM problem_media WHERE problem_id = ? ORDER BY id")
+    .all(id);
+  return maskAnonymous(meta, userId);
 }
 
 router.get("/categories", (_req, res) => {
@@ -79,12 +99,18 @@ router.get("/categories", (_req, res) => {
 
 // Live matching while a user types a problem: "does a startup already solve
 // this?" This powers the post-a-problem flow and the problem detail panel.
-router.post("/match", (req, res) => {
+router.post("/match", optionalAuth, (req, res) => {
   const { text } = req.body;
   if (!text || String(text).trim().length < 8) {
     return res.json({ strong: [], adjacent: [] });
   }
   const { strong, adjacent } = matchStartups(String(text));
+
+  // Startup analytics: someone just searched language this startup covers.
+  // Only for logged-in users; track() dedupes repeat hits while they type.
+  if (req.userId) {
+    for (const m of strong) track("search_match", m.startup.id, req.userId);
+  }
   const shape = (m) => ({
     ...m.startup,
     claimed: !!m.startup.claimed,
@@ -123,9 +149,21 @@ router.get("/", optionalAuth, (req, res) => {
   }
 
   const rows = db.prepare(sql).all(...params);
-  let withMeta = rows.map((r) => attachMeta(r, req.userId));
+  let withMeta = rows.map((r) => maskAnonymous(attachMeta(r, req.userId), req.userId));
 
-  if (sort === "top") withMeta.sort((a, b) => b.score - a.score);
+  // Trending: recent activity beats stale popularity. Engagement (votes,
+  // followers, comments, solutions) decays with age so last week's hot
+  // problem doesn't sit on top forever.
+  if (sort === "trending") {
+    const now = Date.now();
+    for (const p of withMeta) {
+      const ageDays = Math.max(0, (now - Date.parse(p.created_at)) / 86400000);
+      p.trendScore =
+        (p.upvotes * 2 + p.followerCount + p.commentCount * 1.5 + p.solutionCount + 1) *
+        Math.exp(-ageDays / 10);
+    }
+    withMeta.sort((a, b) => b.trendScore - a.trendScore);
+  } else if (sort === "top") withMeta.sort((a, b) => b.score - a.score);
   else if (sort === "new") withMeta.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   else if (sort === "followed") withMeta.sort((a, b) => b.followerCount - a.followerCount);
   else if (sort === "unsolved")
@@ -136,16 +174,47 @@ router.get("/", optionalAuth, (req, res) => {
   res.json({ problems: withMeta });
 });
 
-router.post("/", requireAuth, (req, res) => {
+// Similar existing problems, checked live while the user types. Surfacing
+// duplicates before posting keeps demand concentrated on one listing where
+// votes and followers actually add up.
+router.post("/similar", optionalAuth, (req, res) => {
+  const { text } = req.body;
+  if (!text || String(text).trim().length < 8) return res.json({ similar: [] });
+  const matches = matchSimilarProblems(String(text));
+  res.json({
+    similar: matches.map((m) => maskAnonymous(attachMeta(m.problem, req.userId), req.userId)),
+  });
+});
+
+// Multer only touches multipart requests; JSON posts pass straight through.
+const uploadMedia = (req, res, next) =>
+  upload.array("media", 4)(req, res, (err) =>
+    err ? res.status(400).json({ error: err.message }) : next()
+  );
+
+router.post("/", requireAuth, uploadMedia, (req, res) => {
   const { title, description, category } = req.body;
   if (!title?.trim() || !description?.trim()) {
     return res.status(400).json({ error: "Title and description are required." });
   }
+  const flagged = moderate(title, description);
+  if (flagged) return res.status(400).json({ error: flagged });
+  // Multipart form fields arrive as strings, JSON as booleans; accept both.
+  const anonymous = req.body.anonymous === true || req.body.anonymous === "true" ? 1 : 0;
   const cat = CATEGORIES.includes(category) ? category : "General";
   const info = db
-    .prepare("INSERT INTO problems (user_id, title, description, category) VALUES (?, ?, ?, ?)")
-    .run(req.userId, title.trim(), description.trim(), cat);
+    .prepare(
+      "INSERT INTO problems (user_id, title, description, category, is_anonymous) VALUES (?, ?, ?, ?, ?)"
+    )
+    .run(req.userId, title.trim(), description.trim(), cat, anonymous);
   const problemId = info.lastInsertRowid;
+
+  const insertMedia = db.prepare(
+    "INSERT INTO problem_media (problem_id, file, kind) VALUES (?, ?, ?)"
+  );
+  for (const f of req.files || []) {
+    insertMedia.run(problemId, `/uploads/${f.filename}`, kindOf(f.mimetype));
+  }
 
   // The poster follows their own problem so status changes reach them.
   follow(problemId, req.userId);
@@ -310,6 +379,75 @@ router.post("/:id/ship", requireAuth, (req, res) => {
   );
 
   res.json({ problem: getFullProblem(req.params.id, req.userId) });
+});
+
+// Discussion thread. Startups join in by commenting as their startup, which
+// is how they ask clarifying questions before committing to build.
+router.get("/:id/comments", optionalAuth, (req, res) => {
+  const problem = db.prepare("SELECT id FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.body, c.created_at, c.user_id, c.startup_id,
+              u.name AS author_name, s.name AS startup_name, s.claimed AS startup_claimed
+       FROM comments c
+       JOIN users u ON u.id = c.user_id
+       LEFT JOIN startups s ON s.id = c.startup_id
+       WHERE c.problem_id = ? ORDER BY c.created_at ASC, c.id ASC`
+    )
+    .all(req.params.id);
+
+  res.json({
+    comments: rows.map((r) => ({
+      id: r.id,
+      body: r.body,
+      created_at: r.created_at,
+      author_name: r.author_name,
+      isMine: !!req.userId && r.user_id === req.userId,
+      startup: r.startup_id
+        ? { id: r.startup_id, name: r.startup_name, claimed: !!r.startup_claimed }
+        : null,
+    })),
+  });
+});
+
+router.post("/:id/comments", requireAuth, (req, res) => {
+  const problem = db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+
+  const body = String(req.body.body || "").trim();
+  if (!body) return res.status(400).json({ error: "Comment can't be empty." });
+  if (body.length > 2000) return res.status(400).json({ error: "Comment is too long (2000 characters max)." });
+  const flagged = moderate(body);
+  if (flagged) return res.status(400).json({ error: flagged });
+
+  let startup = null;
+  if (req.body.startup_id) {
+    startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.body.startup_id);
+    if (!startup) return res.status(404).json({ error: "Startup not found." });
+    if (startup.owner_user_id !== req.userId) {
+      return res.status(403).json({ error: "You can only comment as a startup you own." });
+    }
+  }
+
+  db.prepare(
+    "INSERT INTO comments (problem_id, user_id, startup_id, body) VALUES (?, ?, ?, ?)"
+  ).run(req.params.id, req.userId, startup ? startup.id : null, body);
+
+  if (problem.user_id !== req.userId) {
+    const actor = startup
+      ? startup.name
+      : db.prepare("SELECT name FROM users WHERE id = ?").get(req.userId).name;
+    notify(
+      problem.user_id,
+      "comment",
+      `${actor} commented on "${problem.title}"`,
+      `/problems/${problem.id}`
+    );
+  }
+
+  res.status(201).json({ ok: true });
 });
 
 export default router;

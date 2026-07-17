@@ -107,6 +107,32 @@ CREATE TABLE IF NOT EXISTS notifications (
   read INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT ${NOW}
 );
+
+CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  startup_id INTEGER REFERENCES startups(id) ON DELETE SET NULL,
+  body TEXT NOT NULL,
+  created_at TEXT DEFAULT ${NOW}
+);
+
+CREATE TABLE IF NOT EXISTS problem_media (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+  file TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('image','video')),
+  created_at TEXT DEFAULT ${NOW}
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL CHECK (type IN ('profile_view','search_match')),
+  startup_id INTEGER NOT NULL REFERENCES startups(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT DEFAULT ${NOW}
+);
+CREATE INDEX IF NOT EXISTS idx_events_startup ON events(startup_id, type, created_at);
 `);
 
 // Migrations for databases created before the startup-matching pivot.
@@ -115,6 +141,7 @@ const MIGRATIONS = [
   "ALTER TABLE problems ADD COLUMN status TEXT NOT NULL DEFAULT 'open'",
   "ALTER TABLE solutions ADD COLUMN startup_id INTEGER REFERENCES startups(id) ON DELETE SET NULL",
   "ALTER TABLE reviews ADD COLUMN outcome TEXT",
+  "ALTER TABLE problems ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0",
 ];
 for (const sql of MIGRATIONS) {
   try {
