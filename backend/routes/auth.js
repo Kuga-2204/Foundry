@@ -15,13 +15,18 @@ router.post("/register", (req, res) => {
   if (!name?.trim() || !email?.trim() || !password || password.length < 6) {
     return res.status(400).json({ error: "Name, email, and a password of 6+ characters are required." });
   }
-  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase().trim());
-  if (existing) return res.status(409).json({ error: "An account with that email already exists." });
-
   const hash = bcrypt.hashSync(password, 10);
-  const info = db
-    .prepare("INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)")
-    .run(name.trim(), email.toLowerCase().trim(), hash);
+  let info;
+  try {
+    info = db
+      .prepare("INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)")
+      .run(name.trim(), email.toLowerCase().trim(), hash);
+  } catch (err) {
+    if (String(err.message).includes("UNIQUE")) {
+      return res.status(409).json({ error: "An account with that email already exists." });
+    }
+    throw err;
+  }
 
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid);
   const token = jwt.sign({ userId: user.id }, SECRET, { expiresIn: "30d" });

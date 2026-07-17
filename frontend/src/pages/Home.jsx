@@ -21,21 +21,23 @@ function Hero({ user }) {
     <section style={s.hero}>
       <div className="wrap" style={s.heroInner}>
         <div style={s.heroText}>
-          <div style={s.eyebrow} className="mono">a marketplace for real problems</div>
+          <div style={s.eyebrow} className="mono">is there a startup for that?</div>
           <h1 style={s.h1}>
-            Someone, somewhere,
+            Someone might already be
             <br />
-            already has your <span style={{ color: "var(--spark)" }}>next startup.</span>
+            solving your <span style={{ color: "var(--spark)" }}>problem.</span>
           </h1>
           <p style={s.sub}>
-            Foundry is where people post the problems in their daily life they can't solve
-            themselves — and where builders find validated ideas worth building, backed by the
-            people who'll actually use them.
+            Describe a problem from your daily life and Foundry matches you with startups
+            already solving it. Nothing out there yet? List it, and you'll be the first to
+            know when a startup commits to a fix.
           </p>
           <div style={s.ctaRow}>
-            <Link to="/problems" className="btn btn-spark">Browse problems →</Link>
-            <Link to={user ? "/post" : "/register"} className="btn btn-ghost-dark">
-              Post a problem
+            <Link to={user ? "/post" : "/register"} className="btn btn-spark">
+              Describe your problem →
+            </Link>
+            <Link to="/startups" className="btn btn-ghost-dark">
+              Browse startups
             </Link>
           </div>
         </div>
@@ -82,7 +84,7 @@ function Schematic() {
 
       <line x1="192" y1="76" x2="182" y2="76" stroke="var(--text-on-dark-dim)" strokeDasharray="3 3" />
 
-      {/* arrow to solution */}
+      {/* arrow to matched startup */}
       <path d="M 240 50 L 300 50" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
       <defs>
         <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
@@ -90,13 +92,13 @@ function Schematic() {
         </marker>
       </defs>
 
-      {/* Solution card */}
+      {/* Matched startup card */}
       <g transform="translate(300,10)">
         <rect width="156" height="92" rx="3" fill="var(--ink-soft)" stroke="var(--build)" strokeWidth="1.5" />
-        <text x="14" y="24" fill="var(--build)" fontFamily="IBM Plex Mono" fontSize="10" letterSpacing="1">02 / BUILD</text>
+        <text x="14" y="24" fill="var(--build)" fontFamily="IBM Plex Mono" fontSize="10" letterSpacing="1">02 / MATCH</text>
         <text x="14" y="46" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="13" fontWeight="600">SplitFair</text>
-        <text x="14" y="63" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11">auto-splits bills</text>
-        <text x="14" y="79" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11">by usage</text>
+        <text x="14" y="63" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11">already solves</text>
+        <text x="14" y="79" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11">this exact pain</text>
       </g>
 
       {/* arrow down to review */}
@@ -105,14 +107,14 @@ function Schematic() {
       {/* Review card */}
       <g transform="translate(300,150)">
         <rect width="156" height="70" rx="3" fill="var(--ink-soft)" stroke="var(--line-on-dark)" strokeWidth="1.5" />
-        <text x="14" y="22" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="10" letterSpacing="1">03 / REVIEW</text>
+        <text x="14" y="22" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="10" letterSpacing="1">03 / VERIFY</text>
         <text x="14" y="44" fill="var(--spark)" fontFamily="Inter" fontSize="15">★★★★★</text>
-        <text x="14" y="60" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="10.5">"solved it" — Alice</text>
+        <text x="14" y="60" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="10.5">"solved it" (Alice)</text>
       </g>
 
       {/* annotation footer */}
       <text x="24" y="400" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="10">
-        FIG. 1 — PROBLEM TO PRODUCT, VALIDATED AT EVERY STEP
+        FIG. 1 / PROBLEM TO STARTUP, MATCHED AND VERIFIED
       </text>
     </svg>
   );
@@ -123,26 +125,26 @@ function Pipeline() {
   const steps = [
     {
       n: "01",
-      title: "Post the problem",
-      body: "Have a daily frustration or an idea you can't build yourself? Post it — title, description, category. No pitch deck required, just the real problem.",
+      title: "Describe your problem",
+      body: "Type the frustration the way you'd complain about it to a friend. While you write, Foundry live-checks the startup directory for someone already solving it.",
       accent: "var(--spark)",
     },
     {
       n: "02",
-      title: "The crowd validates it",
-      body: "Anyone who shares the problem upvotes it. Irrelevant ideas get downvoted. The score is a live signal of real demand — the best problems rise to the top of the feed.",
+      title: "Get matched, or be first",
+      body: "If a startup solves it, you get it instantly: no searching, no guesswork. If nothing exists yet, list the problem and you're first in line when a fix ships.",
       accent: "var(--build)",
     },
     {
       n: "03",
-      title: "Builders provide a solution",
-      body: "Someone with the skills and time builds it — and posts their product as a solution directly on the original problem thread, for everyone tracking it to see.",
+      title: "The crowd adds weight",
+      body: "Others with the same problem vote and follow it. Every vote is a person waiting for the fix, and startups see exactly how many people that is.",
       accent: "var(--spark)",
     },
     {
       n: "04",
-      title: "Stakeholders view & approve",
-      body: "Only people who posted or voted on the problem can review a solution — a star rating plus written feedback. No drive-by reviews, only signal from people who actually had the problem.",
+      title: "Startups commit and ship",
+      body: "Startups claim matching problems, commit to building, and ship. Everyone following gets notified, and only people who had the problem can review whether it actually worked.",
       accent: "var(--build)",
     },
   ];
@@ -151,7 +153,7 @@ function Pipeline() {
     <section style={s.pipeline}>
       <div className="wrap">
         <h2 style={s.sectionTitle}>How Foundry works</h2>
-        <p style={s.sectionSub}>Four stages. Every problem moves through them in order.</p>
+        <p style={s.sectionSub}>From complaint to solution, with proof at every step.</p>
 
         <div style={s.stepsGrid}>
           {steps.map((step) => (
@@ -173,22 +175,24 @@ function WhyBoth() {
     <section style={s.why}>
       <div className="wrap" style={s.whyGrid}>
         <div style={s.whyCol}>
-          <div style={s.whyEyebrow} className="mono">FOR PROBLEM-POSTERS</div>
-          <h3 style={s.whyTitle}>You don't need to be technical to start a startup.</h3>
+          <div style={s.whyEyebrow} className="mono">FOR PEOPLE WITH PROBLEMS</div>
+          <h3 style={s.whyTitle}>Stop googling badly. Ask the board that knows.</h3>
           <p style={s.whyBody}>
-            You just need the problem. Post it, gather upvotes from people who feel the same
-            pain, and wait for a builder to pick it up. When they do, you get first look — and a
-            say in whether it's actually good.
+            Every "is there an app for that" moment has a home now. Get matched with a
+            startup that solves it, backed by reviews from people who had your exact
+            problem. And when nothing exists yet, your listing makes sure you hear the
+            moment that changes.
           </p>
         </div>
         <div style={s.whyDivider} />
         <div style={s.whyCol}>
-          <div style={s.whyEyebrow} className="mono">FOR BUILDERS</div>
-          <h3 style={s.whyTitle}>Stop guessing what to build.</h3>
+          <div style={s.whyEyebrow} className="mono">FOR STARTUPS</div>
+          <h3 style={s.whyTitle}>Meet users describing the exact pain you solve.</h3>
           <p style={s.whyBody}>
-            Every problem on Foundry comes with a vote count — real, standing demand from people
-            who'd use the fix. Sort by top-voted, unsolved problems and build with a built-in
-            first audience.
+            List what you solve in plain language and Foundry routes matching problems to
+            your dashboard: real leads, in the user's own words, with vote counts that
+            prove demand. Commit to an unsolved problem and everyone waiting on it becomes
+            your launch audience.
           </p>
         </div>
       </div>
@@ -200,11 +204,13 @@ function FinalCta({ user }) {
   return (
     <section style={s.finalCta}>
       <div className="wrap" style={s.finalCtaInner}>
-        <h2 style={s.finalCtaTitle}>The next problem worth solving is already posted.</h2>
+        <h2 style={s.finalCtaTitle}>Your problem is either solved, or about to be. Find out which.</h2>
         <div style={s.ctaRow}>
-          <Link to="/problems" className="btn btn-spark">Browse problems →</Link>
-          <Link to={user ? "/post" : "/register"} className="btn btn-ghost-dark">
-            Post yours
+          <Link to={user ? "/post" : "/register"} className="btn btn-spark">
+            Describe your problem →
+          </Link>
+          <Link to="/startups" className="btn btn-ghost-dark">
+            List your startup
           </Link>
         </div>
       </div>

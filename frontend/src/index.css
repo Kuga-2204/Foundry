@@ -1,19 +1,19 @@
 /* =========================================================
-   Design tokens — "Blueprint Workshop"
+   Design tokens: "Blueprint Workshop"
    A problem is a spec. A solution is a build. Everything on
    this site is drawn like a schematic: grid lines, crop marks,
    annotated numbers, dashed signal paths.
    ========================================================= */
 :root {
-  --ink: #0f1626;          /* near-black navy — blueprint field */
+  --ink: #0f1626;          /* near-black navy, blueprint field */
   --ink-soft: #1a2338;
-  --paper: #eef0e6;        /* pale graph-paper — light sections */
+  --paper: #eef0e6;        /* pale graph-paper, light sections */
   --paper-dim: #e2e5d8;
   --line: rgba(15, 22, 38, 0.12);
   --line-on-dark: rgba(238, 240, 230, 0.16);
-  --spark: #ffb020;        /* amber — an idea / a problem */
-  --build: #3ddc97;        /* mint — validated / shipped */
-  --signal: #ff6b4a;       /* coral — downvote / attention */
+  --spark: #ffb020;        /* amber: an idea / a problem */
+  --build: #3ddc97;        /* mint: validated / shipped */
+  --signal: #ff6b4a;       /* coral: downvote / attention */
   --text: #101425;
   --text-dim: #545a6b;
   --text-on-dark: #eef0e6;

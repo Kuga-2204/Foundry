@@ -15,6 +15,7 @@ export default function Problems() {
 
   const sort = searchParams.get("sort") || "top";
   const category = searchParams.get("category") || "All";
+  const status = searchParams.get("status") || "All";
   const mine = searchParams.get("mine") === "true";
 
   const load = useCallback(async () => {
@@ -23,6 +24,7 @@ export default function Problems() {
     try {
       const params = { sort };
       if (category !== "All") params.category = category;
+      if (status !== "All") params.status = status;
       if (searchParams.get("search")) params.search = searchParams.get("search");
       if (mine) params.mine = "true";
       const data = await api.listProblems(params, token);
@@ -32,7 +34,7 @@ export default function Problems() {
     } finally {
       setLoading(false);
     }
-  }, [sort, category, mine, searchParams, token]);
+  }, [sort, category, status, mine, searchParams, token]);
 
   useEffect(() => {
     api.categories().then((d) => setCategories(d.categories));
@@ -73,7 +75,7 @@ export default function Problems() {
         <div>
           <h1 style={styles.h1}>{mine ? "My problems" : "Browse problems"}</h1>
           <p style={styles.sub}>
-            {mine ? "Problems you've posted." : "Real problems, ranked by how many people share them."}
+            {mine ? "Problems you've posted." : "Real problems from real people. Vote if you have it too, follow to hear when it gets solved."}
           </p>
         </div>
         <Link to="/post" className="btn btn-primary">Post a problem</Link>
@@ -92,8 +94,15 @@ export default function Problems() {
         <select value={sort} onChange={(e) => updateParam("sort", e.target.value)} style={styles.select}>
           <option value="top">Top voted</option>
           <option value="new">Newest</option>
+          <option value="followed">Most followed</option>
           <option value="unsolved">Unsolved</option>
-          <option value="solved">Most built</option>
+        </select>
+
+        <select value={status} onChange={(e) => updateParam("status", e.target.value)} style={styles.select}>
+          <option value="All">Any status</option>
+          <option value="open">Open</option>
+          <option value="building">In progress</option>
+          <option value="solved">Solved</option>
         </select>
 
         <select value={category} onChange={(e) => updateParam("category", e.target.value)} style={styles.select}>
@@ -112,7 +121,7 @@ export default function Problems() {
         <div style={styles.emptyState}>
           <p style={{ fontWeight: 600, marginBottom: 6 }}>No problems here yet.</p>
           <p style={{ color: "var(--text-dim)", fontSize: 14 }}>
-            Be the first — <Link to="/post" style={{ fontWeight: 600 }}>post one</Link>.
+            Be the first to <Link to="/post" style={{ fontWeight: 600 }}>post one</Link>.
           </p>
         </div>
       ) : (
