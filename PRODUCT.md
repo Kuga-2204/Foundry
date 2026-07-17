@@ -1,7 +1,7 @@
-# Foundry: Product Spec (Startup Matching Model)
+# Solvyard: Product Spec (Startup Matching Model)
 
 > One-liner: **"Is there a startup for that?"** People describe a problem from
-> their daily life. Foundry matches them with startups already solving it. If
+> their daily life. Solvyard matches them with startups already solving it. If
 > nothing exists, the problem gets listed publicly and the poster is first in
 > line when a startup commits to a fix.
 
@@ -12,7 +12,7 @@ and posters get nothing back. This model fixes all three without adding
 friction:
 
 1. **Users arrive with natural intent.** "Does something solve my problem?" is
-   a question people already ask constantly. Foundry answers it in one search,
+   a question people already ask constantly. Solvyard answers it in one search,
    so the demand signal (a listed problem) is exhaust from a failed search,
    not homework.
 2. **Startups get paid in distribution.** Leads (users describing the exact
@@ -77,7 +77,7 @@ describe problem -> match found?        -> yes: solution + verified reviews (sta
 - Weekly email digest (newly solved problems you follow, trending gaps per
   category).
 - Semantic matching (embeddings over statements) once keyword overlap stops
-  being enough. AI stays plumbing over Foundry's own data; the moat is the
+  being enough. AI stays plumbing over Solvyard's own data; the moat is the
   problem/match/review dataset, not the model.
 - Monetization, off the user path: startup freemium (claimed profile free;
   paid tier for lead contact details, analytics, promoted-but-labeled

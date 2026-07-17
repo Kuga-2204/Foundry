@@ -1,4 +1,4 @@
-# Foundry: your problem, matched to the startup solving it
+# Solvyard: your problem, matched to the startup solving it
 
 A full-stack app where people describe real-life problems and get matched with
 startups already solving them. If no startup solves it yet, the problem is

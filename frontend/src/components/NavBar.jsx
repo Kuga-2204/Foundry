@@ -10,7 +10,7 @@ export default function NavBar() {
     <header style={styles.header}>
       <div className="wrap" style={styles.inner}>
         <Link to="/" style={styles.logo}>
-          <span style={styles.logoMark}>◆</span> Foundry
+          solv<span style={styles.logoAccent}>yard</span>
         </Link>
 
         <nav style={styles.nav}>
@@ -65,13 +65,12 @@ const styles = {
   logo: {
     fontFamily: "var(--display)",
     fontWeight: 700,
-    fontSize: 20,
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
+    fontSize: 21,
+    letterSpacing: "-0.02em",
     flexShrink: 0,
+    color: "var(--ink)",
   },
-  logoMark: { color: "var(--spark)", fontSize: 14 },
+  logoAccent: { color: "var(--signal)" },
   nav: { display: "flex", gap: 22, flex: 1, marginLeft: 12 },
   link: { fontSize: 14.5, fontWeight: 500, color: "var(--text-dim)" },
   right: { display: "flex", alignItems: "center", gap: 12, flexShrink: 0 },

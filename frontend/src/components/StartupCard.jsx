@@ -10,7 +10,7 @@ export default function StartupCard({ startup, matched = false }) {
           <div style={styles.nameRow}>
             <Link to={`/startups/${startup.id}`} style={styles.name}>{startup.name}</Link>
             {startup.claimed ? (
-              <span className="mono" style={styles.claimedBadge}>✓ On Foundry</span>
+              <span className="mono" style={styles.claimedBadge}>✓ On Solvyard</span>
             ) : (
               <span className="mono" style={styles.unclaimedBadge}>Unclaimed</span>
             )}

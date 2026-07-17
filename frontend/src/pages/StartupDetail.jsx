@@ -75,7 +75,7 @@ export default function StartupDetail() {
             <div style={styles.nameRow}>
               <h1 style={styles.name}>{startup.name}</h1>
               {startup.claimed ? (
-                <span className="mono" style={styles.claimedBadge}>✓ On Foundry</span>
+                <span className="mono" style={styles.claimedBadge}>✓ On Solvyard</span>
               ) : (
                 <span className="mono" style={styles.unclaimedBadge}>Unclaimed profile</span>
               )}
