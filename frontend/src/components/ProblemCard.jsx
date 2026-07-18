@@ -13,6 +13,11 @@ export default function ProblemCard({ problem, onVote }) {
           <span style={styles.badges}>
             <span style={styles.category}>{problem.category}</span>
             <StatusBadge status={problem.status} />
+            {problem.trendScore > 5 && (
+              <span style={{ ...styles.category, background: "var(--spark-soft)", color: "var(--ink)" }}>
+                🔥 Trending
+              </span>
+            )}
           </span>
           <span className="mono" style={styles.date}>
             {formatDate(problem.created_at, { month: "short", day: "numeric" })}
@@ -32,6 +37,16 @@ export default function ProblemCard({ problem, onVote }) {
               ? "No solutions yet"
               : `${problem.solutionCount} solution${problem.solutionCount > 1 ? "s" : ""}`}
           </span>
+          {problem.commentCount > 0 && (
+            <span style={styles.footerItem}>
+              {problem.commentCount} comment{problem.commentCount > 1 ? "s" : ""}
+            </span>
+          )}
+          {problem.mediaCount > 0 && (
+            <span style={styles.footerItem}>
+              {problem.mediaCount} attachment{problem.mediaCount > 1 ? "s" : ""}
+            </span>
+          )}
         </div>
       </div>
     </div>

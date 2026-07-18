@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [startups, setStartups] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [leads, setLeads] = useState({ strong: [], adjacent: [] });
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -31,9 +32,12 @@ export default function Dashboard() {
   const loadLeads = useCallback(() => {
     if (!activeId) return;
     setLeadsLoading(true);
-    api
-      .startupLeads(activeId, token)
-      .then(setLeads)
+    setStats(null);
+    Promise.all([api.startupLeads(activeId, token), api.startupStats(activeId, token)])
+      .then(([leadData, statData]) => {
+        setLeads(leadData);
+        setStats(statData.stats);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLeadsLoading(false));
   }, [activeId, token]);
@@ -50,7 +54,7 @@ export default function Dashboard() {
         <div style={styles.emptyState}>
           <h1 style={{ fontSize: 24, marginBottom: 10 }}>No startup on your account yet</h1>
           <p style={{ color: "var(--text-dim)", fontSize: 14.5, marginBottom: 22, lineHeight: 1.6 }}>
-            The dashboard shows you every problem posted on Foundry that matches what your
+            The dashboard shows you every problem posted on Solvyard that matches what your
             startup solves: real people describing the exact pain, in their own words.
           </p>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
@@ -69,7 +73,7 @@ export default function Dashboard() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>Startup dashboard</h1>
-          <p style={styles.sub}>Problems on Foundry that match what you solve.</p>
+          <p style={styles.sub}>Problems on Solvyard that match what you solve.</p>
         </div>
         {startups.length > 1 && (
           <select
@@ -87,20 +91,39 @@ export default function Dashboard() {
       {error && <div className="error-banner">{error}</div>}
 
       {active && (
-        <div className="card" style={styles.summaryCard}>
-          <div style={{ minWidth: 0 }}>
-            <Link to={`/startups/${active.id}`} style={styles.summaryName}>{active.name}</Link>
-            <p style={styles.summaryTagline}>{active.tagline}</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20, marginBottom: 30 }}>
+          <div className="card" style={{ ...styles.summaryCard, marginBottom: 0 }}>
+            <div style={{ minWidth: 0 }}>
+              <Link to={`/startups/${active.id}`} style={styles.summaryName}>{active.name}</Link>
+              <p style={styles.summaryTagline}>{active.tagline}</p>
+            </div>
+            <div style={styles.summaryStats}>
+              <Stat label="Solutions" value={active.solutionCount} />
+              <Stat label="Commitments" value={active.commitmentCount} />
+            </div>
           </div>
-          <div style={styles.summaryStats}>
-            <Stat label="Solutions" value={active.solutionCount} />
-            <Stat label="Commitments" value={active.commitmentCount} />
-            <Stat label="Reviews" value={active.reviewCount} />
-            {active.reviewCount > 0 && (
-              <div style={styles.stat}>
-                <StarsDisplay value={active.avgRating} />
-                <span style={styles.statLabel}>avg rating</span>
-              </div>
+
+          <div className="card" style={{ padding: 22, display: "flex", gap: 20 }}>
+            {stats ? (
+              <>
+                <div style={{ flex: 1 }}>
+                  <p style={styles.statLabel}>Search appearances</p>
+                  <p style={{ fontSize: 22, fontWeight: 700, margin: "4px 0" }}>{stats.searchAppearances.total}</p>
+                  <p style={{ fontSize: 11, color: "var(--build)", fontWeight: 600 }}>
+                    +{stats.searchAppearances.week} this week
+                  </p>
+                </div>
+                <div style={{ width: 1.5, background: "var(--line)" }} />
+                <div style={{ flex: 1 }}>
+                  <p style={styles.statLabel}>Profile views</p>
+                  <p style={{ fontSize: 22, fontWeight: 700, margin: "4px 0" }}>{stats.profileViews.total}</p>
+                  <p style={{ fontSize: 11, color: "var(--build)", fontWeight: 600 }}>
+                    +{stats.profileViews.week} this week
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading stats…</p>
             )}
           </div>
         </div>

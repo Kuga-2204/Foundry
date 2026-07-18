@@ -80,7 +80,7 @@ export default function StartupForm({ edit = false }) {
         <h1 style={styles.h1}>{edit ? "Edit startup profile" : "Add your startup"}</h1>
         <p style={styles.sub}>
           List what you solve in plain user language. When someone describes that exact
-          problem, Foundry matches them to you: leads, validation, and reviews from people
+          problem, Solvyard matches them to you: leads, validation, and reviews from people
           who actually have the problem.
         </p>
 

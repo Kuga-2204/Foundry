@@ -122,6 +122,7 @@ export default function ProblemDetail() {
             {problem.followerCount} following
           </p>
           <p style={styles.desc}>{problem.description}</p>
+          {problem.media?.length > 0 && <MediaGallery media={problem.media} />}
           <div style={styles.problemActions}>
             <button className="btn btn-sm" onClick={handleFollow}>
               {problem.isFollowing ? "Following ✓" : "Follow for updates"}
@@ -229,6 +230,158 @@ export default function ProblemDetail() {
             }
           />
         ))
+      )}
+
+      <Discussion problemId={id} user={user} token={token} myStartups={myStartups} />
+    </div>
+  );
+}
+
+// Photos and videos attached to the problem. Images open full-size in a
+// lightbox; videos play inline.
+function MediaGallery({ media }) {
+  const [open, setOpen] = useState(null);
+  return (
+    <>
+      <div style={styles.gallery}>
+        {media.map((m) =>
+          m.kind === "video" ? (
+            <video key={m.id} src={m.file} controls preload="metadata" style={styles.galleryVideo} />
+          ) : (
+            <img
+              key={m.id}
+              src={m.file}
+              alt="Problem attachment"
+              style={styles.galleryImage}
+              onClick={() => setOpen(m.file)}
+            />
+          )
+        )}
+      </div>
+      {open && (
+        <div style={styles.lightbox} onClick={() => setOpen(null)}>
+          <img src={open} alt="Attachment, full size" style={styles.lightboxImg} />
+        </div>
+      )}
+    </>
+  );
+}
+
+// Discussion thread under a problem. Startup owners can comment as their
+// startup: that's how they ask clarifying questions before committing.
+function Discussion({ problemId, user, token, myStartups }) {
+  const [comments, setComments] = useState([]);
+  const [body, setBody] = useState("");
+  const [asStartup, setAsStartup] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const d = await api.listComments(problemId, token);
+      setComments(d.comments);
+    } catch {
+      // non-critical; the rest of the page still works
+    }
+  }, [problemId, token]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!body.trim()) return;
+    setError("");
+    setBusy(true);
+    try {
+      const payload = { body };
+      if (asStartup) payload.startup_id = Number(asStartup);
+      await api.postComment(problemId, payload, token);
+      setBody("");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 36 }}>
+      <h2 style={styles.h2}>
+        Discussion{" "}
+        <span className="mono" style={{ color: "var(--text-dim)", fontSize: 16 }}>
+          ({comments.length})
+        </span>
+      </h2>
+      <p style={styles.hint}>
+        Questions, context, "me too" stories. Startups: ask the poster anything before you
+        commit to building.
+      </p>
+
+      {comments.length > 0 && (
+        <div style={styles.commentList}>
+          {comments.map((c) => (
+            <div key={c.id} style={styles.commentItem}>
+              <div style={styles.commentHead}>
+                <span style={styles.commentAuthor}>
+                  {c.startup ? (
+                    <>
+                      <Link to={`/startups/${c.startup.id}`} style={{ fontWeight: 600 }}>
+                        {c.startup.name}
+                      </Link>
+                      {c.startup.claimed ? " ✓" : ""}
+                      <span className="mono" style={styles.startupChip}>STARTUP</span>
+                      <span style={styles.commentVia}>via {c.author_name}</span>
+                    </>
+                  ) : (
+                    <strong style={{ fontSize: 13.5 }}>
+                      {c.author_name}
+                      {c.isMine ? " (you)" : ""}
+                    </strong>
+                  )}
+                </span>
+                <span className="mono" style={styles.commentDate}>{formatDate(c.created_at)}</span>
+              </div>
+              <p style={styles.commentBody}>{c.body}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {user ? (
+        <form onSubmit={submit} className="card" style={styles.commentForm}>
+          {error && <div className="error-banner">{error}</div>}
+          <textarea
+            rows={3}
+            placeholder="Add to the discussion…"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            style={{ width: "100%", marginBottom: 10 }}
+          />
+          <div style={styles.commentFormRow}>
+            {myStartups.length > 0 && (
+              <select
+                value={asStartup}
+                onChange={(e) => setAsStartup(e.target.value)}
+                style={styles.startupSelect}
+              >
+                <option value="">Comment as myself</option>
+                {myStartups.map((s) => (
+                  <option key={s.id} value={s.id}>Comment as {s.name}</option>
+                ))}
+              </select>
+            )}
+            <button className="btn btn-primary btn-sm" disabled={busy || !body.trim()}>
+              {busy ? "Posting…" : "Comment"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p style={styles.hint}>
+          <Link to="/login" style={{ fontWeight: 600 }}>Log in</Link> to join the discussion.
+        </p>
       )}
     </div>
   );
@@ -587,4 +740,32 @@ const styles = {
   reviewItem: { paddingBottom: 12, borderBottom: "1px solid var(--line)" },
   reviewHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, gap: 10, flexWrap: "wrap" },
   reviewFeedback: { fontSize: 13.5, color: "var(--text-dim)", lineHeight: 1.5 },
+  gallery: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 },
+  galleryImage: {
+    width: 132, height: 132, objectFit: "cover", borderRadius: 3,
+    border: "1.5px solid var(--line)", cursor: "zoom-in", display: "block",
+  },
+  galleryVideo: {
+    maxWidth: 280, maxHeight: 200, borderRadius: 3,
+    border: "1.5px solid var(--line)", display: "block", background: "#000",
+  },
+  lightbox: {
+    position: "fixed", inset: 0, background: "rgba(16, 20, 37, 0.85)", zIndex: 100,
+    display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out",
+    padding: 32,
+  },
+  lightboxImg: { maxWidth: "100%", maxHeight: "100%", borderRadius: 4 },
+  commentList: { display: "flex", flexDirection: "column", gap: 0, marginBottom: 16 },
+  commentItem: { padding: "14px 0", borderBottom: "1px solid var(--line)" },
+  commentHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 },
+  commentAuthor: { display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, flexWrap: "wrap" },
+  startupChip: {
+    fontSize: 9.5, fontWeight: 600, letterSpacing: 0.8, color: "var(--build)",
+    border: "1.5px solid var(--build)", borderRadius: 2, padding: "1px 6px",
+  },
+  commentVia: { fontSize: 12, color: "var(--text-dim)" },
+  commentDate: { fontSize: 11.5, color: "var(--text-dim)" },
+  commentBody: { fontSize: 14, lineHeight: 1.55, color: "var(--text)", whiteSpace: "pre-wrap" },
+  commentForm: { padding: 18 },
+  commentFormRow: { display: "flex", justifyContent: "flex-end", gap: 12, alignItems: "center", flexWrap: "wrap" },
 };

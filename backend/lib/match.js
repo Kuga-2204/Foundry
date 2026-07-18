@@ -91,6 +91,47 @@ export function matchStartups(text, { limit = 6 } = {}) {
   return { strong, adjacent };
 }
 
+// Problem-to-problem matching: is this problem already listed? Title tokens
+// weigh double because two people describing the same pain tend to reach for
+// the same few words in the title.
+export function matchSimilarProblems(text, { limit = 4, excludeId = null } = {}) {
+  const tokens = [...new Set(tokenize(text))];
+  if (tokens.length < 2) return [];
+
+  const problems = db
+    .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
+    .all();
+
+  const scored = [];
+  for (const p of problems) {
+    if (excludeId && p.id === Number(excludeId)) continue;
+    const weights = new Map();
+    for (const tok of tokenize(p.title)) weights.set(tok, 2);
+    for (const tok of tokenize(p.description)) {
+      if (!weights.has(tok)) weights.set(tok, 1);
+    }
+    let score = 0;
+    let titleHits = 0;
+    const matchedTerms = [];
+    for (const tok of tokens) {
+      const w = weights.get(tok);
+      if (w) {
+        score += w;
+        matchedTerms.push(tok);
+        if (w === 2) titleHits++;
+      }
+    }
+    // Two shared title words, or three shared words overall, reads as
+    // "probably the same problem". One stray word does not.
+    if (titleHits >= 2 || matchedTerms.length >= 3) {
+      scored.push({ problem: p, score, matchedTerms });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit);
+}
+
 // Inverse direction: score every problem against one startup, for the
 // startup dashboard's lead feed.
 export function matchProblemsForStartup(startupId, { limit = 25 } = {}) {
@@ -102,7 +143,7 @@ export function matchProblemsForStartup(startupId, { limit = 25 } = {}) {
   const index = startupIndex(startup, statements);
 
   const problems = db
-    .prepare("SELECT p.*, u.name AS author_name FROM problems p JOIN users u ON u.id = p.user_id")
+    .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
     .all();
 
   const scored = [];

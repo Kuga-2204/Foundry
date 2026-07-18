@@ -2,6 +2,9 @@ import { Router } from "express";
 import db from "../db/index.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { matchProblemsForStartup } from "../lib/match.js";
+import { maskAnonymous } from "../lib/anon.js";
+import { moderate } from "../lib/moderate.js";
+import { track, statsFor } from "../lib/track.js";
 
 const router = Router();
 
@@ -90,6 +93,9 @@ router.post("/", requireAuth, (req, res) => {
       .json({ error: "Add 1 to 10 'problems we solve' statements, in plain user language." });
   }
 
+  const flagged = moderate(name, tagline, description, ...cleaned);
+  if (flagged) return res.status(400).json({ error: flagged });
+
   const info = db
     .prepare(
       `INSERT INTO startups (owner_user_id, name, tagline, description, website, category, claimed)
@@ -116,6 +122,9 @@ router.post("/", requireAuth, (req, res) => {
 router.get("/:id", optionalAuth, (req, res) => {
   const row = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!row) return res.status(404).json({ error: "Startup not found." });
+
+  // Analytics: profile visit, unless the owner is checking their own page.
+  if (row.owner_user_id !== req.userId) track("profile_view", row.id, req.userId);
 
   const solutions = db
     .prepare(
@@ -162,6 +171,9 @@ router.put("/:id", requireAuth, (req, res) => {
       .json({ error: "Add 1 to 10 'problems we solve' statements, in plain user language." });
   }
 
+  const flagged = moderate(name, tagline, description, ...cleaned);
+  if (flagged) return res.status(400).json({ error: flagged });
+
   db.prepare(
     `UPDATE startups SET name = ?, tagline = ?, description = ?, website = ?, category = ?
      WHERE id = ?`
@@ -199,6 +211,17 @@ router.post("/:id/claim", requireAuth, (req, res) => {
   res.json({ startup: attachMeta(row, req.userId) });
 });
 
+// Reach stats for the startup dashboard: profile visits and how often this
+// startup surfaced while people typed problems it covers.
+router.get("/:id/stats", requireAuth, (req, res) => {
+  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+  if (!startup) return res.status(404).json({ error: "Startup not found." });
+  if (startup.owner_user_id !== req.userId) {
+    return res.status(403).json({ error: "Only the owner can view this startup's stats." });
+  }
+  res.json({ stats: statsFor(startup.id) });
+});
+
 // Lead feed for the startup dashboard: problems that match what this startup
 // solves (strong) plus adjacent problems in its space (roadmap signal).
 router.get("/:id/leads", requireAuth, (req, res) => {
@@ -220,13 +243,18 @@ router.get("/:id/leads", requireAuth, (req, res) => {
 
   const decorate = (m) => {
     const v = problemMeta.get(m.problem.id);
-    return {
-      ...m.problem,
-      score: v.up - v.down,
-      followerCount: followerCount.get(m.problem.id).c,
-      matchScore: m.score,
-      matchedTerms: m.matchedTerms,
-    };
+    return maskAnonymous(
+      {
+        ...m.problem,
+        upvotes: v.up,
+        downvotes: v.down,
+        score: v.up,
+        followerCount: followerCount.get(m.problem.id).c,
+        matchScore: m.score,
+        matchedTerms: m.matchedTerms,
+      },
+      req.userId
+    );
   };
 
   const { strong, adjacent } = matchProblemsForStartup(req.params.id);
