@@ -246,7 +246,9 @@ router.get("/:id/leads", requireAuth, (req, res) => {
     return maskAnonymous(
       {
         ...m.problem,
-        score: v.up - v.down,
+        upvotes: v.up,
+        downvotes: v.down,
+        score: v.up,
         followerCount: followerCount.get(m.problem.id).c,
         matchScore: m.score,
         matchedTerms: m.matchedTerms,

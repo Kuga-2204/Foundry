@@ -3,7 +3,12 @@ import db from "../db/index.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { matchStartups, matchSimilarProblems } from "../lib/match.js";
 import { notify, notifyFollowers, follow } from "../lib/notify.js";
-import { maskAnonymous } from "../lib/anon.js";
+import {
+  anonymousHandleCandidates,
+  maskAnonymous,
+  normaliseAnonymousHandle,
+  validateAnonymousHandle,
+} from "../lib/anon.js";
 import { upload, kindOf } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
@@ -67,7 +72,9 @@ function attachMeta(problem, userId) {
     ...problem,
     upvotes: votes.up,
     downvotes: votes.down,
-    score: votes.up - votes.down,
+    // Demand is the number of people who say they have the problem. A downvote
+    // is useful feedback, but must never turn one person's demand into -1.
+    score: votes.up,
     solutionCount,
     followerCount,
     commentCount,
@@ -82,7 +89,8 @@ function attachMeta(problem, userId) {
 function getFullProblem(id, userId) {
   const row = db
     .prepare(
-      `SELECT p.*, u.name AS author_name FROM problems p JOIN users u ON u.id = p.user_id WHERE p.id = ?`
+      `SELECT p.*, u.name AS author_name, u.anon_handle
+       FROM problems p JOIN users u ON u.id = p.user_id WHERE p.id = ?`
     )
     .get(id);
   if (!row) return null;
@@ -125,7 +133,7 @@ router.get("/", optionalAuth, (req, res) => {
   const { sort = "top", category, search, status, mine } = req.query;
 
   let sql = `
-    SELECT p.*, u.name AS author_name
+    SELECT p.*, u.name AS author_name, u.anon_handle
     FROM problems p JOIN users u ON u.id = p.user_id
     WHERE 1=1
   `;
@@ -193,7 +201,7 @@ const uploadMedia = (req, res, next) =>
   );
 
 router.post("/", requireAuth, uploadMedia, (req, res) => {
-  const { title, description, category } = req.body;
+  const { title, description, category, anonymousHandle } = req.body;
   if (!title?.trim() || !description?.trim()) {
     return res.status(400).json({ error: "Title and description are required." });
   }
@@ -202,6 +210,43 @@ router.post("/", requireAuth, uploadMedia, (req, res) => {
   // Multipart form fields arrive as strings, JSON as booleans; accept both.
   const anonymous = req.body.anonymous === true || req.body.anonymous === "true" ? 1 : 0;
   const cat = CATEGORIES.includes(category) ? category : "General";
+  if (anonymous) {
+    const user = db.prepare("SELECT anon_handle FROM users WHERE id = ?").get(req.userId);
+    const requested = validateAnonymousHandle(anonymousHandle);
+    if (requested.error) return res.status(400).json({ error: requested.error });
+
+    const current = normaliseAnonymousHandle(user?.anon_handle);
+    if (current && requested.handle && current.toLowerCase() !== requested.handle.toLowerCase()) {
+      return res.status(409).json({
+        error: `Your anonymous name is already set as ${current}. It stays the same to protect your anonymous identity.`,
+      });
+    }
+
+    if (!current) {
+      const candidates = requested.handle ? [requested.handle] : anonymousHandleCandidates();
+      let handle = null;
+      for (const candidate of candidates) {
+        const taken = db
+          .prepare("SELECT id FROM users WHERE lower(anon_handle) = lower(?) AND id != ?")
+          .get(candidate, req.userId);
+        if (!taken) {
+          handle = candidate;
+          break;
+        }
+      }
+      if (!handle) {
+        return res.status(409).json({ error: "That anonymous name is already taken. Try another one." });
+      }
+      try {
+        db.prepare("UPDATE users SET anon_handle = ? WHERE id = ?").run(handle, req.userId);
+      } catch (err) {
+        if (String(err.message).includes("UNIQUE")) {
+          return res.status(409).json({ error: "That anonymous name is already taken. Try another one." });
+        }
+        throw err;
+      }
+    }
+  }
   const info = db
     .prepare(
       "INSERT INTO problems (user_id, title, description, category, is_anonymous) VALUES (?, ?, ?, ?, ?)"
@@ -404,6 +449,7 @@ router.get("/:id/comments", optionalAuth, (req, res) => {
       body: r.body,
       created_at: r.created_at,
       author_name: r.author_name,
+      author_id: r.user_id,
       isMine: !!req.userId && r.user_id === req.userId,
       startup: r.startup_id
         ? { id: r.startup_id, name: r.startup_name, claimed: !!r.startup_claimed }

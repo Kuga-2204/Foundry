@@ -133,6 +133,25 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT DEFAULT ${NOW}
 );
 CREATE INDEX IF NOT EXISTS idx_events_startup ON events(startup_id, type, created_at);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT ${NOW}
+);
+CREATE INDEX IF NOT EXISTS idx_resets_token ON password_resets(token_hash);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_type TEXT NOT NULL CHECK (target_type IN ('problem','comment')),
+  target_id INTEGER NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT DEFAULT ${NOW}
+);
 `);
 
 // Migrations for databases created before the startup-matching pivot.
@@ -142,6 +161,8 @@ const MIGRATIONS = [
   "ALTER TABLE solutions ADD COLUMN startup_id INTEGER REFERENCES startups(id) ON DELETE SET NULL",
   "ALTER TABLE reviews ADD COLUMN outcome TEXT",
   "ALTER TABLE problems ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN google_id TEXT",
+  "ALTER TABLE users ADD COLUMN anon_handle TEXT",
 ];
 for (const sql of MIGRATIONS) {
   try {
@@ -149,6 +170,14 @@ for (const sql of MIGRATIONS) {
   } catch (err) {
     if (!String(err.message).includes("duplicate column name")) throw err;
   }
+}
+
+// Each user's anonymous handle is unique. NULLs (users who never posted
+// anonymously) are exempt, which a plain unique index allows in SQLite.
+try {
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_anon_handle ON users(anon_handle)");
+} catch {
+  /* index already exists */
 }
 
 export default db;

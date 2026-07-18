@@ -99,7 +99,7 @@ export function matchSimilarProblems(text, { limit = 4, excludeId = null } = {})
   if (tokens.length < 2) return [];
 
   const problems = db
-    .prepare("SELECT p.*, u.name AS author_name FROM problems p JOIN users u ON u.id = p.user_id")
+    .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
     .all();
 
   const scored = [];
@@ -143,7 +143,7 @@ export function matchProblemsForStartup(startupId, { limit = 25 } = {}) {
   const index = startupIndex(startup, statements);
 
   const problems = db
-    .prepare("SELECT p.*, u.name AS author_name FROM problems p JOIN users u ON u.id = p.user_id")
+    .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
     .all();
 
   const scored = [];
