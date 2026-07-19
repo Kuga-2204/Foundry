@@ -1,13 +1,5 @@
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 import crypto from "crypto";
-import { fileURLToPath } from "url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // Extensions come from this whitelist, never from the client's filename, so a
 // renamed executable can't land on disk with its real extension.
