@@ -342,8 +342,10 @@ router.post("/:id/vote", requireAuth, async (req, res) => {
       req.userId,
       type
     );
-    await follow(req.params.id, req.userId);
   }
+  // Only "me too" (upvote) means you're waiting on a fix, so only that
+  // follows the problem. Downvoting ("not relevant") must not subscribe you.
+  if (type === 1) await follow(req.params.id, req.userId);
 
   res.json({ problem: await getFullProblem(req.params.id, req.userId) });
 });

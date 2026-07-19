@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import GoogleButton from "../components/GoogleButton.jsx";
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [params] = useSearchParams();
+  const dest = params.get("next") || location.state?.from || "/problems";
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -16,7 +19,7 @@ export default function Login() {
     setBusy(true);
     try {
       await login(form.email, form.password);
-      navigate(location.state?.from || "/problems");
+      navigate(dest);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -32,6 +35,8 @@ export default function Login() {
 
         {error && <div className="error-banner">{error}</div>}
 
+        <GoogleButton onDone={() => navigate(dest)} onError={setError} />
+
         <form onSubmit={submit}>
           <div className="field">
             <label>Email</label>
@@ -43,7 +48,10 @@ export default function Login() {
             />
           </div>
           <div className="field">
-            <label>Password</label>
+            <label style={styles.pwLabel}>
+              Password
+              <Link to="/forgot-password" style={styles.forgot}>Forgot?</Link>
+            </label>
             <input
               type="password"
               required
@@ -70,4 +78,6 @@ const styles = {
   h1: { fontSize: 26, marginBottom: 8 },
   sub: { fontSize: 14, color: "var(--text-dim)", marginBottom: 24 },
   footer: { fontSize: 14, color: "var(--text-dim)", marginTop: 18, textAlign: "center" },
+  pwLabel: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
+  forgot: { fontSize: 12.5, fontWeight: 500, color: "var(--text-dim)" },
 };

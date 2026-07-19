@@ -3,8 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Default site-level social preview. In production the backend swaps
+         this whole block for per-page tags (see backend/lib/seo.js). -->
+    <!--SSR_META_START-->
     <title>Solvyard: your problem, matched to the startup solving it</title>
-    <link rel="icon" type="image/svg+xml" href="/solvyard-icon.svg" />
+    <meta name="description" content="Describe a problem from your daily life and Solvyard matches you with startups already solving it." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Solvyard" />
+    <meta property="og:title" content="Solvyard: your problem, matched to the startup solving it" />
+    <meta property="og:description" content="Describe a problem from your daily life and Solvyard matches you with startups already solving it." />
+    <meta property="og:image" content="/solvyard-og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Solvyard: your problem, matched to the startup solving it" />
+    <meta name="twitter:description" content="Describe a problem from your daily life and Solvyard matches you with startups already solving it." />
+    <meta name="twitter:image" content="/solvyard-og.png" />
+    <!--SSR_META_END-->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

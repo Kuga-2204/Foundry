@@ -21,6 +21,14 @@ export const api = {
   register: (payload) => request("/auth/register", { method: "POST", body: payload }),
   login: (payload) => request("/auth/login", { method: "POST", body: payload }),
   me: (token) => request("/auth/me", { token }),
+  googleLogin: (credential) => request("/auth/google", { method: "POST", body: { credential } }),
+  forgotPassword: (email) => request("/auth/forgot-password", { method: "POST", body: { email } }),
+  resetPassword: (token, password) =>
+    request("/auth/reset-password", { method: "POST", body: { token, password } }),
+
+  userProfile: (id) => request(`/users/${id}`),
+  report: (target_type, target_id, reason) =>
+    request("/reports", { method: "POST", body: { target_type, target_id, reason } }),
 
   categories: () => request("/problems/categories"),
   listProblems: (params, token) => {
