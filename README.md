@@ -64,3 +64,6 @@ npm run dev
 ```
 
 Set `SUPABASE_DB_URL` and `JWT_SECRET` in `backend/.env` before deploying anywhere real.
+For problem photos/videos, also create a public Supabase Storage bucket named
+`problem-media` and set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and
+`SUPABASE_STORAGE_BUCKET` in the backend environment.

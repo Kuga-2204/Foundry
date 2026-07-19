@@ -9,7 +9,7 @@ import {
   normaliseAnonymousHandle,
   validateAnonymousHandle,
 } from "../lib/anon.js";
-import { upload, kindOf } from "../lib/uploads.js";
+import { upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
 
@@ -265,7 +265,8 @@ router.post("/", requireAuth, uploadMedia, async (req, res) => {
     "INSERT INTO problem_media (problem_id, file, kind) VALUES (?, ?, ?)"
   );
   for (const f of req.files || []) {
-    await insertMedia.run(problemId, `/uploads/${f.filename}`, kindOf(f.mimetype));
+    const media = await uploadProblemMedia(f, problemId);
+    await insertMedia.run(problemId, media.url, media.kind);
   }
 
   // The poster follows their own problem so status changes reach them.
