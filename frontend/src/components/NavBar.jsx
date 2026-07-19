@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import NotificationsBell from "./NotificationsBell.jsx";
+import logoUrl from "../../assets/solvyard.png";
 
 export default function NavBar() {
   const { user, logout } = useAuth();
@@ -10,7 +11,10 @@ export default function NavBar() {
     <header style={styles.header}>
       <div className="wrap" style={styles.inner}>
         <Link to="/" style={styles.logo}>
-          solv<span style={styles.logoAccent}>yard</span>
+          <img src={logoUrl} alt="" style={styles.logoImage} />
+          <span>
+            solv<span style={styles.logoAccent}>yard</span>
+          </span>
         </Link>
 
         <nav style={styles.nav}>
@@ -63,12 +67,21 @@ const styles = {
     gap: 24,
   },
   logo: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
     fontFamily: "var(--display)",
     fontWeight: 700,
     fontSize: 21,
-    letterSpacing: "-0.02em",
+    letterSpacing: 0,
     flexShrink: 0,
     color: "var(--ink)",
+  },
+  logoImage: {
+    width: 48,
+    height: 48,
+    objectFit: "contain",
+    display: "block",
   },
   logoAccent: { color: "var(--signal)" },
   nav: { display: "flex", gap: 22, flex: 1, marginLeft: 12 },

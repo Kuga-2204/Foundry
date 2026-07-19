@@ -13,7 +13,7 @@ function truncate(s, n = 160) {
 
 // Build the <meta> block for one page. Anonymous problems still get a preview,
 // but the author is never named (matches masking everywhere else).
-export function metaForPath(pathname) {
+export async function metaForPath(pathname) {
   const site = "Solvyard";
   const defaultDesc = "Describe a problem from your daily life and Solvyard matches you with startups already solving it.";
   const image = `${APP_URL}/solvyard-og.png`;
@@ -24,7 +24,7 @@ export function metaForPath(pathname) {
 
   const problemMatch = pathname.match(/^\/problems\/(\d+)$/);
   if (problemMatch) {
-    const p = db
+    const p = await db
       .prepare("SELECT title, description FROM problems WHERE id = ?")
       .get(problemMatch[1]);
     if (p) {
@@ -35,7 +35,7 @@ export function metaForPath(pathname) {
 
   const startupMatch = pathname.match(/^\/startups\/(\d+)$/);
   if (startupMatch) {
-    const s = db
+    const s = await db
       .prepare("SELECT name, tagline, description FROM startups WHERE id = ?")
       .get(startupMatch[1]);
     if (s) {
@@ -60,18 +60,19 @@ export function metaForPath(pathname) {
 
 // Swap the default marker block in the built index.html for per-page tags.
 // Falls back to the original html if the markers are missing.
-export function injectMeta(html, pathname) {
+export async function injectMeta(html, pathname) {
+  const meta = await metaForPath(pathname);
   return html.replace(
     /<!--SSR_META_START-->[\s\S]*?<!--SSR_META_END-->/,
-    `<!--SSR_META_START-->\n${metaForPath(pathname)}\n    <!--SSR_META_END-->`
+    `<!--SSR_META_START-->\n${meta}\n    <!--SSR_META_END-->`
   );
 }
 
-export function buildSitemap() {
-  const rows = db
+export async function buildSitemap() {
+  const rows = await db
     .prepare("SELECT id, created_at FROM problems ORDER BY created_at DESC LIMIT 5000")
     .all();
-  const startups = db.prepare("SELECT id FROM startups ORDER BY id DESC LIMIT 5000").all();
+  const startups = await db.prepare("SELECT id FROM startups ORDER BY id DESC LIMIT 5000").all();
 
   const urls = [
     { loc: `${APP_URL}/`, priority: "1.0" },

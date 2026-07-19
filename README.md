@@ -10,8 +10,8 @@ outcome-based (solved / partial / unsolved).
 See PRODUCT.md for the full product spec.
 
 ## Stack
-- **Backend**: Node + Express + SQLite (via `better-sqlite3`, zero setup, no
-  external DB server needed), JWT auth, bcrypt password hashing.
+- **Backend**: Node + Express + Supabase Postgres (via `pg`), JWT auth,
+  bcrypt password hashing.
 - **Frontend**: React 18 + Vite + React Router. Plain CSS with design tokens
   (no Tailwind), inline styles per component for simplicity.
 
@@ -46,10 +46,12 @@ frontend/
 
 ## Running it locally
 
-**1. Backend** (port 4000, creates `problemhub.sqlite` automatically):
+**1. Backend** (port 4000, creates the Supabase Postgres schema automatically):
 ```
 cd backend
 npm install
+copy .env.example .env   # or create .env yourself
+# set SUPABASE_DB_URL to your Supabase Postgres connection string
 npm run seed   # optional: sample startups so matching works out of the box
 npm start
 ```
@@ -61,4 +63,4 @@ npm install
 npm run dev
 ```
 
-Set `JWT_SECRET` in `backend/.env` before deploying anywhere real.
+Set `SUPABASE_DB_URL` and `JWT_SECRET` in `backend/.env` before deploying anywhere real.

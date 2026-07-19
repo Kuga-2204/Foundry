@@ -40,9 +40,9 @@ function startupIndex(startup, statements) {
   return weights;
 }
 
-function loadStartupsWithStatements() {
-  const startups = db.prepare("SELECT * FROM startups").all();
-  const statements = db.prepare("SELECT * FROM startup_statements").all();
+async function loadStartupsWithStatements() {
+  const startups = await db.prepare("SELECT * FROM startups").all();
+  const statements = await db.prepare("SELECT * FROM startup_statements").all();
   const byStartup = new Map();
   for (const s of statements) {
     if (!byStartup.has(s.startup_id)) byStartup.set(s.startup_id, []);
@@ -57,12 +57,12 @@ function loadStartupsWithStatements() {
 // Score every startup against a piece of problem text.
 // Returns strong matches ("likely solves this") and adjacent matches
 // ("works in this space"), each with the terms that matched.
-export function matchStartups(text, { limit = 6 } = {}) {
+export async function matchStartups(text, { limit = 6 } = {}) {
   const problemTokens = [...new Set(tokenize(text))];
   if (problemTokens.length === 0) return { strong: [], adjacent: [] };
 
   const scored = [];
-  for (const { startup, statements } of loadStartupsWithStatements()) {
+  for (const { startup, statements } of await loadStartupsWithStatements()) {
     const index = startupIndex(startup, statements);
     let score = 0;
     const matchedTerms = [];
@@ -94,11 +94,11 @@ export function matchStartups(text, { limit = 6 } = {}) {
 // Problem-to-problem matching: is this problem already listed? Title tokens
 // weigh double because two people describing the same pain tend to reach for
 // the same few words in the title.
-export function matchSimilarProblems(text, { limit = 4, excludeId = null } = {}) {
+export async function matchSimilarProblems(text, { limit = 4, excludeId = null } = {}) {
   const tokens = [...new Set(tokenize(text))];
   if (tokens.length < 2) return [];
 
-  const problems = db
+  const problems = await db
     .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
     .all();
 
@@ -134,15 +134,15 @@ export function matchSimilarProblems(text, { limit = 4, excludeId = null } = {})
 
 // Inverse direction: score every problem against one startup, for the
 // startup dashboard's lead feed.
-export function matchProblemsForStartup(startupId, { limit = 25 } = {}) {
-  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(startupId);
+export async function matchProblemsForStartup(startupId, { limit = 25 } = {}) {
+  const startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(startupId);
   if (!startup) return { strong: [], adjacent: [] };
-  const statements = db
+  const statements = await db
     .prepare("SELECT * FROM startup_statements WHERE startup_id = ?")
     .all(startupId);
   const index = startupIndex(startup, statements);
 
-  const problems = db
+  const problems = await db
     .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
     .all();
 

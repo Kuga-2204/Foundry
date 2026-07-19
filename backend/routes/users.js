@@ -6,13 +6,13 @@ const router = Router();
 // Public profile: builds credibility for the person behind a problem or
 // solution. Anonymous problems are excluded here just as they are everywhere
 // else, so this route can never de-anonymize them.
-router.get("/:id", (req, res) => {
-  const user = db
+router.get("/:id", async (req, res) => {
+  const user = await db
     .prepare("SELECT id, name, bio, created_at FROM users WHERE id = ?")
     .get(req.params.id);
   if (!user) return res.status(404).json({ error: "User not found." });
 
-  const problems = db
+  const problems = await db
     .prepare(
       `SELECT p.id, p.title, p.category, p.status, p.created_at,
               (SELECT COALESCE(SUM(vote_type), 0) FROM votes v WHERE v.problem_id = p.id) AS score
@@ -22,7 +22,7 @@ router.get("/:id", (req, res) => {
     )
     .all(req.params.id);
 
-  const solutions = db
+  const solutions = await db
     .prepare(
       `SELECT s.id, s.title, s.problem_id, p.title AS problem_title, s.startup_id,
               st.name AS startup_name
@@ -34,7 +34,7 @@ router.get("/:id", (req, res) => {
     )
     .all(req.params.id);
 
-  const startups = db
+  const startups = await db
     .prepare("SELECT id, name, tagline FROM startups WHERE owner_user_id = ? ORDER BY name")
     .all(req.params.id);
 

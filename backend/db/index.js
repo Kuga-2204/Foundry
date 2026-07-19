@@ -1,69 +1,119 @@
-import Database from "better-sqlite3";
-import path from "path";
-import { fileURLToPath } from "url";
+import "dotenv/config";
+import pg from "pg";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database(path.join(__dirname, "problemhub.sqlite"));
+const { Pool, types } = pg;
 
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+const timestampParser = (value) => new Date(value).toISOString().replace(/\.\d{3}Z$/, "Z");
+types.setTypeParser(1114, timestampParser);
+types.setTypeParser(1184, timestampParser);
 
-// ISO-8601 UTC with explicit Z so every client parses it the same way.
-const NOW = "(strftime('%Y-%m-%dT%H:%M:%SZ','now'))";
+const connectionString =
+  process.env.SUPABASE_DB_URL ||
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL;
 
-db.exec(`
+if (!connectionString) {
+  throw new Error(
+    "Set SUPABASE_DB_URL (or DATABASE_URL/POSTGRES_URL) to your Supabase Postgres connection string."
+  );
+}
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.DB_SSL === "false" ? false : { rejectUnauthorized: false },
+});
+
+function normalizeValue(value) {
+  if (typeof value !== "string" || value === "") return value;
+  if (!/^-?\d+(\.\d+)?$/.test(value)) return value;
+  const number = Number(value);
+  return Number.isSafeInteger(number) || value.includes(".") ? number : value;
+}
+
+function normalizeRow(row) {
+  if (!row) return row;
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeValue(value)]));
+}
+
+function toPostgresSql(sql) {
+  let i = 0;
+  let pgSql = sql.replace(/\?/g, () => `$${++i}`);
+  pgSql = pgSql.replace(
+    /INSERT\s+OR\s+IGNORE\s+INTO\s+(.+?)\s+VALUES\s*\((.+?)\)/is,
+    "INSERT INTO $1 VALUES ($2) ON CONFLICT DO NOTHING"
+  );
+  pgSql = pgSql.replace(/\bLIKE\b/g, "ILIKE");
+  return pgSql;
+}
+
+function shouldReturnId(sql) {
+  return /^\s*INSERT\b/i.test(sql) && !/\bRETURNING\b/i.test(sql);
+}
+
+const db = {
+  async exec(sql) {
+    await pool.query(sql);
+  },
+  prepare(sql) {
+    return {
+      async all(...params) {
+        const result = await pool.query(toPostgresSql(sql), params);
+        return result.rows.map(normalizeRow);
+      },
+      async get(...params) {
+        const result = await pool.query(toPostgresSql(sql), params);
+        return normalizeRow(result.rows[0]);
+      },
+      async run(...params) {
+        const query = toPostgresSql(shouldReturnId(sql) ? `${sql} RETURNING id` : sql);
+        const result = await pool.query(query, params);
+        return {
+          changes: result.rowCount,
+          lastInsertRowid: result.rows[0]?.id,
+        };
+      },
+    };
+  },
+  async close() {
+    await pool.end();
+  },
+};
+
+export async function initDb() {
+  await db.exec(`
 CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   bio TEXT DEFAULT '',
-  created_at TEXT DEFAULT ${NOW}
+  google_id TEXT,
+  anon_handle TEXT UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS problems (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT 'General',
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','building','solved')),
-  created_at TEXT DEFAULT ${NOW}
+  is_anonymous INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS votes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   vote_type INTEGER NOT NULL CHECK (vote_type IN (1, -1)),
-  created_at TEXT DEFAULT ${NOW},
+  created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(problem_id, user_id)
 );
 
-CREATE TABLE IF NOT EXISTS solutions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  startup_id INTEGER REFERENCES startups(id) ON DELETE SET NULL,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  link TEXT DEFAULT '',
-  created_at TEXT DEFAULT ${NOW}
-);
-
-CREATE TABLE IF NOT EXISTS reviews (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  solution_id INTEGER NOT NULL REFERENCES solutions(id) ON DELETE CASCADE,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
-  outcome TEXT CHECK (outcome IN ('solved','partial','unsolved')),
-  feedback TEXT DEFAULT '',
-  created_at TEXT DEFAULT ${NOW},
-  UNIQUE(solution_id, user_id)
-);
-
 CREATE TABLE IF NOT EXISTS startups (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   tagline TEXT NOT NULL DEFAULT '',
@@ -71,113 +121,110 @@ CREATE TABLE IF NOT EXISTS startups (
   website TEXT DEFAULT '',
   category TEXT NOT NULL DEFAULT 'General',
   claimed INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT ${NOW}
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS startup_statements (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   startup_id INTEGER NOT NULL REFERENCES startups(id) ON DELETE CASCADE,
   statement TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS problem_followers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE IF NOT EXISTS solutions (
+  id SERIAL PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TEXT DEFAULT ${NOW},
+  startup_id INTEGER REFERENCES startups(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  link TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id SERIAL PRIMARY KEY,
+  solution_id INTEGER NOT NULL REFERENCES solutions(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  outcome TEXT CHECK (outcome IN ('solved','partial','unsolved')),
+  feedback TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(solution_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS problem_followers (
+  id SERIAL PRIMARY KEY,
+  problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(problem_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS commitments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
   startup_id INTEGER NOT NULL REFERENCES startups(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'building' CHECK (status IN ('building','shipped')),
   note TEXT DEFAULT '',
-  created_at TEXT DEFAULT ${NOW},
+  created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(problem_id, startup_id)
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   type TEXT NOT NULL,
   message TEXT NOT NULL,
   link TEXT DEFAULT '',
   read INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT ${NOW}
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS comments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   startup_id INTEGER REFERENCES startups(id) ON DELETE SET NULL,
   body TEXT NOT NULL,
-  created_at TEXT DEFAULT ${NOW}
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS problem_media (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
   file TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('image','video')),
-  created_at TEXT DEFAULT ${NOW}
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   type TEXT NOT NULL CHECK (type IN ('profile_view','search_match')),
   startup_id INTEGER NOT NULL REFERENCES startups(id) ON DELETE CASCADE,
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  created_at TEXT DEFAULT ${NOW}
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_events_startup ON events(startup_id, type, created_at);
 
 CREATE TABLE IF NOT EXISTS password_resets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL,
-  expires_at TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
   used INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT ${NOW}
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_resets_token ON password_resets(token_hash);
 
 CREATE TABLE IF NOT EXISTS reports (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   reporter_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   target_type TEXT NOT NULL CHECK (target_type IN ('problem','comment')),
   target_id INTEGER NOT NULL,
   reason TEXT NOT NULL DEFAULT '',
-  created_at TEXT DEFAULT ${NOW}
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 `);
-
-// Migrations for databases created before the startup-matching pivot.
-// "duplicate column name" errors mean the column already exists; ignore them.
-const MIGRATIONS = [
-  "ALTER TABLE problems ADD COLUMN status TEXT NOT NULL DEFAULT 'open'",
-  "ALTER TABLE solutions ADD COLUMN startup_id INTEGER REFERENCES startups(id) ON DELETE SET NULL",
-  "ALTER TABLE reviews ADD COLUMN outcome TEXT",
-  "ALTER TABLE problems ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0",
-  "ALTER TABLE users ADD COLUMN google_id TEXT",
-  "ALTER TABLE users ADD COLUMN anon_handle TEXT",
-];
-for (const sql of MIGRATIONS) {
-  try {
-    db.exec(sql);
-  } catch (err) {
-    if (!String(err.message).includes("duplicate column name")) throw err;
-  }
-}
-
-// Each user's anonymous handle is unique. NULLs (users who never posted
-// anonymously) are exempt, which a plain unique index allows in SQLite.
-try {
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_anon_handle ON users(anon_handle)");
-} catch {
-  /* index already exists */
 }
 
 export default db;

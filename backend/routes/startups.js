@@ -19,12 +19,12 @@ function cleanStatements(raw) {
   return cleaned;
 }
 
-function attachMeta(startup, userId) {
-  const statements = db
+async function attachMeta(startup, userId) {
+  const statements = await db
     .prepare("SELECT id, statement FROM startup_statements WHERE startup_id = ?")
     .all(startup.id);
 
-  const ratings = db
+  const ratings = await db
     .prepare(
       `SELECT COUNT(*) AS c, COALESCE(AVG(r.rating), 0) AS avg,
               COALESCE(SUM(CASE WHEN r.outcome = 'solved' THEN 1 ELSE 0 END), 0) AS solved
@@ -33,13 +33,13 @@ function attachMeta(startup, userId) {
     )
     .get(startup.id);
 
-  const solutionCount = db
+  const solutionCount = (await db
     .prepare("SELECT COUNT(*) AS c FROM solutions WHERE startup_id = ?")
-    .get(startup.id).c;
+    .get(startup.id)).c;
 
-  const commitmentCount = db
+  const commitmentCount = (await db
     .prepare("SELECT COUNT(*) AS c FROM commitments WHERE startup_id = ?")
-    .get(startup.id).c;
+    .get(startup.id)).c;
 
   return {
     ...startup,
@@ -54,7 +54,7 @@ function attachMeta(startup, userId) {
   };
 }
 
-router.get("/", optionalAuth, (req, res) => {
+router.get("/", optionalAuth, async (req, res) => {
   const { category, search, claimed } = req.query;
   let sql = "SELECT * FROM startups WHERE 1=1";
   const params = [];
@@ -67,18 +67,22 @@ router.get("/", optionalAuth, (req, res) => {
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (claimed === "true") sql += " AND claimed = 1";
-  sql += " ORDER BY claimed DESC, name COLLATE NOCASE ASC";
+  sql += " ORDER BY claimed DESC, LOWER(name) ASC";
 
-  const rows = db.prepare(sql).all(...params);
-  res.json({ startups: rows.map((s) => attachMeta(s, req.userId)) });
+  const rows = await db.prepare(sql).all(...params);
+  const startups = [];
+  for (const s of rows) startups.push(await attachMeta(s, req.userId));
+  res.json({ startups });
 });
 
-router.get("/mine", requireAuth, (req, res) => {
-  const rows = db.prepare("SELECT * FROM startups WHERE owner_user_id = ?").all(req.userId);
-  res.json({ startups: rows.map((s) => attachMeta(s, req.userId)) });
+router.get("/mine", requireAuth, async (req, res) => {
+  const rows = await db.prepare("SELECT * FROM startups WHERE owner_user_id = ?").all(req.userId);
+  const startups = [];
+  for (const s of rows) startups.push(await attachMeta(s, req.userId));
+  res.json({ startups });
 });
 
-router.post("/", requireAuth, (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   const { name, tagline, description, website, category, statements } = req.body;
   if (!name?.trim() || !tagline?.trim() || !description?.trim()) {
     return res.status(400).json({ error: "Name, tagline, and description are required." });
@@ -96,7 +100,7 @@ router.post("/", requireAuth, (req, res) => {
   const flagged = moderate(name, tagline, description, ...cleaned);
   if (flagged) return res.status(400).json({ error: flagged });
 
-  const info = db
+  const info = await db
     .prepare(
       `INSERT INTO startups (owner_user_id, name, tagline, description, website, category, claimed)
        VALUES (?, ?, ?, ?, ?, ?, 1)`
@@ -113,20 +117,20 @@ router.post("/", requireAuth, (req, res) => {
   const insertStatement = db.prepare(
     "INSERT INTO startup_statements (startup_id, statement) VALUES (?, ?)"
   );
-  for (const s of cleaned) insertStatement.run(info.lastInsertRowid, s);
+  for (const s of cleaned) await insertStatement.run(info.lastInsertRowid, s);
 
-  const row = db.prepare("SELECT * FROM startups WHERE id = ?").get(info.lastInsertRowid);
-  res.status(201).json({ startup: attachMeta(row, req.userId) });
+  const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(info.lastInsertRowid);
+  res.status(201).json({ startup: await attachMeta(row, req.userId) });
 });
 
-router.get("/:id", optionalAuth, (req, res) => {
-  const row = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+router.get("/:id", optionalAuth, async (req, res) => {
+  const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!row) return res.status(404).json({ error: "Startup not found." });
 
   // Analytics: profile visit, unless the owner is checking their own page.
-  if (row.owner_user_id !== req.userId) track("profile_view", row.id, req.userId);
+  if (row.owner_user_id !== req.userId) await track("profile_view", row.id, req.userId);
 
-  const solutions = db
+  const solutions = (await db
     .prepare(
       `SELECT s.*, u.name AS author_name, p.title AS problem_title,
               (SELECT COUNT(*) FROM reviews r WHERE r.solution_id = s.id) AS reviewCount,
@@ -136,10 +140,10 @@ router.get("/:id", optionalAuth, (req, res) => {
        JOIN problems p ON p.id = s.problem_id
        WHERE s.startup_id = ? ORDER BY s.created_at DESC`
     )
-    .all(req.params.id)
+    .all(req.params.id))
     .map((s) => ({ ...s, avgRating: Math.round(s.avgRating * 10) / 10 }));
 
-  const commitments = db
+  const commitments = await db
     .prepare(
       `SELECT c.*, p.title AS problem_title, p.status AS problem_status
        FROM commitments c JOIN problems p ON p.id = c.problem_id
@@ -147,11 +151,11 @@ router.get("/:id", optionalAuth, (req, res) => {
     )
     .all(req.params.id);
 
-  res.json({ startup: attachMeta(row, req.userId), solutions, commitments });
+  res.json({ startup: await attachMeta(row, req.userId), solutions, commitments });
 });
 
-router.put("/:id", requireAuth, (req, res) => {
-  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+router.put("/:id", requireAuth, async (req, res) => {
+  const startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.owner_user_id !== req.userId) {
     return res.status(403).json({ error: "Only the owner can edit this startup." });
@@ -174,7 +178,7 @@ router.put("/:id", requireAuth, (req, res) => {
   const flagged = moderate(name, tagline, description, ...cleaned);
   if (flagged) return res.status(400).json({ error: flagged });
 
-  db.prepare(
+  await db.prepare(
     `UPDATE startups SET name = ?, tagline = ?, description = ?, website = ?, category = ?
      WHERE id = ?`
   ).run(
@@ -186,46 +190,46 @@ router.put("/:id", requireAuth, (req, res) => {
     req.params.id
   );
 
-  db.prepare("DELETE FROM startup_statements WHERE startup_id = ?").run(req.params.id);
+  await db.prepare("DELETE FROM startup_statements WHERE startup_id = ?").run(req.params.id);
   const insertStatement = db.prepare(
     "INSERT INTO startup_statements (startup_id, statement) VALUES (?, ?)"
   );
-  for (const s of cleaned) insertStatement.run(req.params.id, s);
+  for (const s of cleaned) await insertStatement.run(req.params.id, s);
 
-  const row = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
-  res.json({ startup: attachMeta(row, req.userId) });
+  const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+  res.json({ startup: await attachMeta(row, req.userId) });
 });
 
 // Claim an unclaimed (seeded) startup profile. In production this needs a
 // verification step (work email on the startup's domain, or manual review).
-router.post("/:id/claim", requireAuth, (req, res) => {
-  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+router.post("/:id/claim", requireAuth, async (req, res) => {
+  const startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.claimed) return res.status(409).json({ error: "This startup is already claimed." });
 
-  db.prepare("UPDATE startups SET owner_user_id = ?, claimed = 1 WHERE id = ?").run(
+  await db.prepare("UPDATE startups SET owner_user_id = ?, claimed = 1 WHERE id = ?").run(
     req.userId,
     req.params.id
   );
-  const row = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
-  res.json({ startup: attachMeta(row, req.userId) });
+  const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+  res.json({ startup: await attachMeta(row, req.userId) });
 });
 
 // Reach stats for the startup dashboard: profile visits and how often this
 // startup surfaced while people typed problems it covers.
-router.get("/:id/stats", requireAuth, (req, res) => {
-  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+router.get("/:id/stats", requireAuth, async (req, res) => {
+  const startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.owner_user_id !== req.userId) {
     return res.status(403).json({ error: "Only the owner can view this startup's stats." });
   }
-  res.json({ stats: statsFor(startup.id) });
+  res.json({ stats: await statsFor(startup.id) });
 });
 
 // Lead feed for the startup dashboard: problems that match what this startup
 // solves (strong) plus adjacent problems in its space (roadmap signal).
-router.get("/:id/leads", requireAuth, (req, res) => {
-  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+router.get("/:id/leads", requireAuth, async (req, res) => {
+  const startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.owner_user_id !== req.userId) {
     return res.status(403).json({ error: "Only the owner can view this startup's leads." });
@@ -241,15 +245,15 @@ router.get("/:id/leads", requireAuth, (req, res) => {
     "SELECT COUNT(*) AS c FROM problem_followers WHERE problem_id = ?"
   );
 
-  const decorate = (m) => {
-    const v = problemMeta.get(m.problem.id);
+  const decorate = async (m) => {
+    const v = await problemMeta.get(m.problem.id);
     return maskAnonymous(
       {
         ...m.problem,
         upvotes: v.up,
         downvotes: v.down,
         score: v.up,
-        followerCount: followerCount.get(m.problem.id).c,
+        followerCount: (await followerCount.get(m.problem.id)).c,
         matchScore: m.score,
         matchedTerms: m.matchedTerms,
       },
@@ -257,8 +261,12 @@ router.get("/:id/leads", requireAuth, (req, res) => {
     );
   };
 
-  const { strong, adjacent } = matchProblemsForStartup(req.params.id);
-  res.json({ strong: strong.map(decorate), adjacent: adjacent.map(decorate) });
+  const { strong, adjacent } = await matchProblemsForStartup(req.params.id);
+  const strongDecorated = [];
+  for (const m of strong) strongDecorated.push(await decorate(m));
+  const adjacentDecorated = [];
+  for (const m of adjacent) adjacentDecorated.push(await decorate(m));
+  res.json({ strong: strongDecorated, adjacent: adjacentDecorated });
 });
 
 export default router;

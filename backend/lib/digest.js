@@ -7,30 +7,33 @@ const APP_URL = process.env.APP_URL || "http://localhost:5173";
 // Build one user's weekly digest: fresh problems matching startups they own,
 // plus recent activity on problems they follow. Returns null when there's
 // nothing worth an email, so we never send an empty "here's your nothing".
-export function buildDigestFor(userId) {
-  const user = db.prepare("SELECT id, name, email FROM users WHERE id = ?").get(userId);
+export async function buildDigestFor(userId) {
+  const user = await db.prepare("SELECT id, name, email FROM users WHERE id = ?").get(userId);
   if (!user) return null;
 
-  const sinceClause = "created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')";
+  const sinceClause = "created_at > now() - interval '7 days'";
   const sections = [];
 
   // Startup owners: new matching problems posted this week.
-  const startups = db.prepare("SELECT id, name FROM startups WHERE owner_user_id = ?").all(userId);
+  const startups = await db.prepare("SELECT id, name FROM startups WHERE owner_user_id = ?").all(userId);
   for (const s of startups) {
-    const { strong } = matchProblemsForStartup(s.id);
-    const fresh = strong
-      .map((m) => m.problem)
-      .filter((p) => db.prepare(`SELECT 1 FROM problems WHERE id = ? AND ${sinceClause}`).get(p.id));
-    if (fresh.length > 0) {
+    const { strong } = await matchProblemsForStartup(s.id);
+    const freshProblems = [];
+    for (const p of strong.map((m) => m.problem)) {
+      if (await db.prepare(`SELECT 1 FROM problems WHERE id = ? AND ${sinceClause}`).get(p.id)) {
+        freshProblems.push(p);
+      }
+    }
+    if (freshProblems.length > 0) {
       sections.push({
         heading: `New problems matching ${s.name}`,
-        items: fresh.slice(0, 5).map((p) => ({ title: p.title, url: `${APP_URL}/problems/${p.id}` })),
+        items: freshProblems.slice(0, 5).map((p) => ({ title: p.title, url: `${APP_URL}/problems/${p.id}` })),
       });
     }
   }
 
   // Followed problems that got a solution or shipped fix this week.
-  const followedUpdates = db
+  const followedUpdates = await db
     .prepare(
       `SELECT DISTINCT p.id, p.title FROM problem_followers f
        JOIN problems p ON p.id = f.problem_id
@@ -63,11 +66,11 @@ export function buildDigestFor(userId) {
 // Send digests to everyone who has something waiting. Returns a summary of
 // how many were sent vs. skipped (nothing to say).
 export async function sendAllDigests() {
-  const users = db.prepare("SELECT id FROM users").all();
+  const users = await db.prepare("SELECT id FROM users").all();
   let sent = 0;
   let skipped = 0;
   for (const u of users) {
-    const digest = buildDigestFor(u.id);
+    const digest = await buildDigestFor(u.id);
     if (!digest) {
       skipped++;
       continue;

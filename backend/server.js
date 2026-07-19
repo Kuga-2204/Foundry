@@ -1,6 +1,7 @@
 // Load env first: ESM imports are hoisted, so a plain dotenv.config() call
 // would run after imported modules already read process.env.
 import "dotenv/config";
+import "express-async-errors";
 
 import express from "express";
 import cors from "cors";
@@ -9,6 +10,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import { UPLOADS_DIR } from "./lib/uploads.js";
+import { initDb } from "./db/index.js";
 import authRoutes from "./routes/auth.js";
 import problemRoutes from "./routes/problems.js";
 import solutionRoutes from "./routes/solutions.js";
@@ -22,6 +24,8 @@ import badgeRoutes from "./routes/badge.js";
 import { buildSitemap, buildRobots, injectMeta } from "./lib/seo.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+await initDb();
 
 const app = express();
 app.use(cors());
@@ -44,9 +48,13 @@ app.use("/api/digest", digestRoutes);
 app.use("/badge", badgeRoutes);
 
 // SEO endpoints. Served from the API so they always reflect live data.
-app.get("/sitemap.xml", (_req, res) => {
+app.get("/sitemap.xml", async (_req, res, next) => {
+  try {
   res.setHeader("Content-Type", "application/xml");
-  res.send(buildSitemap());
+  res.send(await buildSitemap());
+  } catch (err) {
+    next(err);
+  }
 });
 app.get("/robots.txt", (_req, res) => {
   res.setHeader("Content-Type", "text/plain");
@@ -61,12 +69,16 @@ const DIST = path.join(__dirname, "..", "frontend", "dist");
 if (fs.existsSync(path.join(DIST, "index.html"))) {
   const template = fs.readFileSync(path.join(DIST, "index.html"), "utf-8");
   app.use(express.static(DIST, { index: false }));
-  app.get("*", (req, res, next) => {
+  app.get("*", async (req, res, next) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/uploads") || req.path.startsWith("/badge")) {
       return next();
     }
-    res.setHeader("Content-Type", "text/html");
-    res.send(injectMeta(template, req.path));
+    try {
+      res.setHeader("Content-Type", "text/html");
+      res.send(await injectMeta(template, req.path));
+    } catch (err) {
+      next(err);
+    }
   });
 }
 

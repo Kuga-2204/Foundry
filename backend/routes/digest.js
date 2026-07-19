@@ -18,8 +18,8 @@ router.post("/run", async (req, res) => {
 
 // Preview the signed-in user's own digest without sending, for a settings
 // page or just to see what it would contain.
-router.get("/preview", requireAuth, (req, res) => {
-  const digest = buildDigestFor(req.userId);
+router.get("/preview", requireAuth, async (req, res) => {
+  const digest = await buildDigestFor(req.userId);
   res.json({ hasContent: !!digest, text: digest ? digest.text : null });
 });
 

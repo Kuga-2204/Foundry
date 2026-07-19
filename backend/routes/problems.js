@@ -28,8 +28,8 @@ const CATEGORIES = [
   "Developer Tools",
 ];
 
-function attachMeta(problem, userId) {
-  const votes = db
+async function attachMeta(problem, userId) {
+  const votes = await db
     .prepare(
       `SELECT
          COALESCE(SUM(CASE WHEN vote_type = 1 THEN 1 ELSE 0 END), 0) AS up,
@@ -38,34 +38,34 @@ function attachMeta(problem, userId) {
     )
     .get(problem.id);
 
-  const solutionCount = db
+  const solutionCount = (await db
     .prepare("SELECT COUNT(*) AS c FROM solutions WHERE problem_id = ?")
-    .get(problem.id).c;
+    .get(problem.id)).c;
 
-  const followerCount = db
+  const followerCount = (await db
     .prepare("SELECT COUNT(*) AS c FROM problem_followers WHERE problem_id = ?")
-    .get(problem.id).c;
+    .get(problem.id)).c;
 
-  const commentCount = db
+  const commentCount = (await db
     .prepare("SELECT COUNT(*) AS c FROM comments WHERE problem_id = ?")
-    .get(problem.id).c;
+    .get(problem.id)).c;
 
-  const mediaCount = db
+  const mediaCount = (await db
     .prepare("SELECT COUNT(*) AS c FROM problem_media WHERE problem_id = ?")
-    .get(problem.id).c;
+    .get(problem.id)).c;
 
   let myVote = null;
   let hasStake = false;
   let isFollowing = false;
   if (userId) {
-    const v = db
+    const v = await db
       .prepare("SELECT vote_type FROM votes WHERE problem_id = ? AND user_id = ?")
       .get(problem.id, userId);
     myVote = v ? v.vote_type : null;
     hasStake = myVote !== null || problem.user_id === userId;
-    isFollowing = !!db
+    isFollowing = !!(await db
       .prepare("SELECT id FROM problem_followers WHERE problem_id = ? AND user_id = ?")
-      .get(problem.id, userId);
+      .get(problem.id, userId));
   }
 
   return {
@@ -86,16 +86,16 @@ function attachMeta(problem, userId) {
   };
 }
 
-function getFullProblem(id, userId) {
-  const row = db
+async function getFullProblem(id, userId) {
+  const row = await db
     .prepare(
       `SELECT p.*, u.name AS author_name, u.anon_handle
        FROM problems p JOIN users u ON u.id = p.user_id WHERE p.id = ?`
     )
     .get(id);
   if (!row) return null;
-  const meta = attachMeta(row, userId);
-  meta.media = db
+  const meta = await attachMeta(row, userId);
+  meta.media = await db
     .prepare("SELECT id, file, kind FROM problem_media WHERE problem_id = ? ORDER BY id")
     .all(id);
   return maskAnonymous(meta, userId);
@@ -107,17 +107,17 @@ router.get("/categories", (_req, res) => {
 
 // Live matching while a user types a problem: "does a startup already solve
 // this?" This powers the post-a-problem flow and the problem detail panel.
-router.post("/match", optionalAuth, (req, res) => {
+router.post("/match", optionalAuth, async (req, res) => {
   const { text } = req.body;
   if (!text || String(text).trim().length < 8) {
     return res.json({ strong: [], adjacent: [] });
   }
-  const { strong, adjacent } = matchStartups(String(text));
+  const { strong, adjacent } = await matchStartups(String(text));
 
   // Startup analytics: someone just searched language this startup covers.
   // Only for logged-in users; track() dedupes repeat hits while they type.
   if (req.userId) {
-    for (const m of strong) track("search_match", m.startup.id, req.userId);
+    for (const m of strong) await track("search_match", m.startup.id, req.userId);
   }
   const shape = (m) => ({
     ...m.startup,
@@ -129,7 +129,7 @@ router.post("/match", optionalAuth, (req, res) => {
 });
 
 // Browse / feed
-router.get("/", optionalAuth, (req, res) => {
+router.get("/", optionalAuth, async (req, res) => {
   const { sort = "top", category, search, status, mine } = req.query;
 
   let sql = `
@@ -156,8 +156,11 @@ router.get("/", optionalAuth, (req, res) => {
     params.push(req.userId);
   }
 
-  const rows = db.prepare(sql).all(...params);
-  let withMeta = rows.map((r) => maskAnonymous(attachMeta(r, req.userId), req.userId));
+  const rows = await db.prepare(sql).all(...params);
+  let withMeta = [];
+  for (const r of rows) {
+    withMeta.push(maskAnonymous(await attachMeta(r, req.userId), req.userId));
+  }
 
   // Trending: recent activity beats stale popularity. Engagement (votes,
   // followers, comments, solutions) decays with age so last week's hot
@@ -185,12 +188,16 @@ router.get("/", optionalAuth, (req, res) => {
 // Similar existing problems, checked live while the user types. Surfacing
 // duplicates before posting keeps demand concentrated on one listing where
 // votes and followers actually add up.
-router.post("/similar", optionalAuth, (req, res) => {
+router.post("/similar", optionalAuth, async (req, res) => {
   const { text } = req.body;
   if (!text || String(text).trim().length < 8) return res.json({ similar: [] });
-  const matches = matchSimilarProblems(String(text));
+  const matches = await matchSimilarProblems(String(text));
+  const similar = [];
+  for (const m of matches) {
+    similar.push(maskAnonymous(await attachMeta(m.problem, req.userId), req.userId));
+  }
   res.json({
-    similar: matches.map((m) => maskAnonymous(attachMeta(m.problem, req.userId), req.userId)),
+    similar,
   });
 });
 
@@ -200,7 +207,7 @@ const uploadMedia = (req, res, next) =>
     err ? res.status(400).json({ error: err.message }) : next()
   );
 
-router.post("/", requireAuth, uploadMedia, (req, res) => {
+router.post("/", requireAuth, uploadMedia, async (req, res) => {
   const { title, description, category, anonymousHandle } = req.body;
   if (!title?.trim() || !description?.trim()) {
     return res.status(400).json({ error: "Title and description are required." });
@@ -211,7 +218,7 @@ router.post("/", requireAuth, uploadMedia, (req, res) => {
   const anonymous = req.body.anonymous === true || req.body.anonymous === "true" ? 1 : 0;
   const cat = CATEGORIES.includes(category) ? category : "General";
   if (anonymous) {
-    const user = db.prepare("SELECT anon_handle FROM users WHERE id = ?").get(req.userId);
+    const user = await db.prepare("SELECT anon_handle FROM users WHERE id = ?").get(req.userId);
     const requested = validateAnonymousHandle(anonymousHandle);
     if (requested.error) return res.status(400).json({ error: requested.error });
 
@@ -226,7 +233,7 @@ router.post("/", requireAuth, uploadMedia, (req, res) => {
       const candidates = requested.handle ? [requested.handle] : anonymousHandleCandidates();
       let handle = null;
       for (const candidate of candidates) {
-        const taken = db
+        const taken = await db
           .prepare("SELECT id FROM users WHERE lower(anon_handle) = lower(?) AND id != ?")
           .get(candidate, req.userId);
         if (!taken) {
@@ -238,7 +245,7 @@ router.post("/", requireAuth, uploadMedia, (req, res) => {
         return res.status(409).json({ error: "That anonymous name is already taken. Try another one." });
       }
       try {
-        db.prepare("UPDATE users SET anon_handle = ? WHERE id = ?").run(handle, req.userId);
+        await db.prepare("UPDATE users SET anon_handle = ? WHERE id = ?").run(handle, req.userId);
       } catch (err) {
         if (String(err.message).includes("UNIQUE")) {
           return res.status(409).json({ error: "That anonymous name is already taken. Try another one." });
@@ -247,7 +254,7 @@ router.post("/", requireAuth, uploadMedia, (req, res) => {
       }
     }
   }
-  const info = db
+  const info = await db
     .prepare(
       "INSERT INTO problems (user_id, title, description, category, is_anonymous) VALUES (?, ?, ?, ?, ?)"
     )
@@ -258,20 +265,20 @@ router.post("/", requireAuth, uploadMedia, (req, res) => {
     "INSERT INTO problem_media (problem_id, file, kind) VALUES (?, ?, ?)"
   );
   for (const f of req.files || []) {
-    insertMedia.run(problemId, `/uploads/${f.filename}`, kindOf(f.mimetype));
+    await insertMedia.run(problemId, `/uploads/${f.filename}`, kindOf(f.mimetype));
   }
 
   // The poster follows their own problem so status changes reach them.
-  follow(problemId, req.userId);
+  await follow(problemId, req.userId);
 
   // Tell owners of matching startups that a new lead landed.
-  const { strong } = matchStartups(`${title} ${description}`);
+  const { strong } = await matchStartups(`${title} ${description}`);
   const seenOwners = new Set();
   for (const m of strong) {
     const ownerId = m.startup.owner_user_id;
     if (!ownerId || ownerId === req.userId || seenOwners.has(ownerId)) continue;
     seenOwners.add(ownerId);
-    notify(
+    await notify(
       ownerId,
       "lead",
       `New problem matches what ${m.startup.name} solves: "${title.trim()}"`,
@@ -279,14 +286,14 @@ router.post("/", requireAuth, uploadMedia, (req, res) => {
     );
   }
 
-  res.status(201).json({ problem: getFullProblem(problemId, req.userId) });
+  res.status(201).json({ problem: await getFullProblem(problemId, req.userId) });
 });
 
-router.get("/:id", optionalAuth, (req, res) => {
-  const problem = getFullProblem(req.params.id, req.userId);
+router.get("/:id", optionalAuth, async (req, res) => {
+  const problem = await getFullProblem(req.params.id, req.userId);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
-  const commitments = db
+  const commitments = await db
     .prepare(
       `SELECT c.*, s.name AS startup_name, s.claimed AS startup_claimed
        FROM commitments c JOIN startups s ON s.id = c.startup_id
@@ -298,10 +305,10 @@ router.get("/:id", optionalAuth, (req, res) => {
 });
 
 // Startups that likely already solve this problem.
-router.get("/:id/matches", (req, res) => {
-  const problem = db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+router.get("/:id/matches", async (req, res) => {
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
-  const { strong, adjacent } = matchStartups(`${problem.title} ${problem.description}`);
+  const { strong, adjacent } = await matchStartups(`${problem.title} ${problem.description}`);
   const shape = (m) => ({
     ...m.startup,
     claimed: !!m.startup.claimed,
@@ -313,74 +320,74 @@ router.get("/:id/matches", (req, res) => {
 
 // Vote: 1 (up) or -1 (down). Same type again removes the vote (toggle).
 // Any vote also follows the problem, so voters hear when it gets solved.
-router.post("/:id/vote", requireAuth, (req, res) => {
+router.post("/:id/vote", requireAuth, async (req, res) => {
   const { type } = req.body;
   if (![1, -1].includes(type)) return res.status(400).json({ error: "Vote type must be 1 or -1." });
 
-  const problem = db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
-  const existing = db
+  const existing = await db
     .prepare("SELECT * FROM votes WHERE problem_id = ? AND user_id = ?")
     .get(req.params.id, req.userId);
 
   if (existing && existing.vote_type === type) {
-    db.prepare("DELETE FROM votes WHERE id = ?").run(existing.id);
+    await db.prepare("DELETE FROM votes WHERE id = ?").run(existing.id);
   } else if (existing) {
-    db.prepare("UPDATE votes SET vote_type = ? WHERE id = ?").run(type, existing.id);
+    await db.prepare("UPDATE votes SET vote_type = ? WHERE id = ?").run(type, existing.id);
   } else {
-    db.prepare("INSERT INTO votes (problem_id, user_id, vote_type) VALUES (?, ?, ?)").run(
+    await db.prepare("INSERT INTO votes (problem_id, user_id, vote_type) VALUES (?, ?, ?)").run(
       req.params.id,
       req.userId,
       type
     );
-    follow(req.params.id, req.userId);
+    await follow(req.params.id, req.userId);
   }
 
-  res.json({ problem: getFullProblem(req.params.id, req.userId) });
+  res.json({ problem: await getFullProblem(req.params.id, req.userId) });
 });
 
-router.post("/:id/follow", requireAuth, (req, res) => {
-  const problem = db.prepare("SELECT id FROM problems WHERE id = ?").get(req.params.id);
+router.post("/:id/follow", requireAuth, async (req, res) => {
+  const problem = await db.prepare("SELECT id FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
-  const existing = db
+  const existing = await db
     .prepare("SELECT id FROM problem_followers WHERE problem_id = ? AND user_id = ?")
     .get(req.params.id, req.userId);
-  if (existing) db.prepare("DELETE FROM problem_followers WHERE id = ?").run(existing.id);
-  else follow(req.params.id, req.userId);
+  if (existing) await db.prepare("DELETE FROM problem_followers WHERE id = ?").run(existing.id);
+  else await follow(req.params.id, req.userId);
 
-  res.json({ problem: getFullProblem(req.params.id, req.userId) });
+  res.json({ problem: await getFullProblem(req.params.id, req.userId) });
 });
 
 // A startup commits to building a fix. Problem moves to "building" and every
 // follower is notified. Shipping later moves it to "solved".
-router.post("/:id/commit", requireAuth, (req, res) => {
+router.post("/:id/commit", requireAuth, async (req, res) => {
   const { startup_id, note } = req.body;
-  const problem = db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
-  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(startup_id);
+  const startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(startup_id);
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.owner_user_id !== req.userId) {
     return res.status(403).json({ error: "You can only commit on behalf of your own startup." });
   }
 
-  const existing = db
+  const existing = await db
     .prepare("SELECT * FROM commitments WHERE problem_id = ? AND startup_id = ?")
     .get(req.params.id, startup_id);
   if (existing) return res.status(409).json({ error: "This startup already committed to this problem." });
 
-  db.prepare("INSERT INTO commitments (problem_id, startup_id, note) VALUES (?, ?, ?)").run(
+  await db.prepare("INSERT INTO commitments (problem_id, startup_id, note) VALUES (?, ?, ?)").run(
     req.params.id,
     startup_id,
     (note || "").trim()
   );
   if (problem.status === "open") {
-    db.prepare("UPDATE problems SET status = 'building' WHERE id = ?").run(req.params.id);
+    await db.prepare("UPDATE problems SET status = 'building' WHERE id = ?").run(req.params.id);
   }
 
-  notifyFollowers(
+  await notifyFollowers(
     problem.id,
     req.userId,
     "status",
@@ -388,23 +395,23 @@ router.post("/:id/commit", requireAuth, (req, res) => {
     `/problems/${problem.id}`
   );
 
-  res.status(201).json({ problem: getFullProblem(req.params.id, req.userId) });
+  res.status(201).json({ problem: await getFullProblem(req.params.id, req.userId) });
 });
 
 // Mark a commitment as shipped. The problem is now solved and followers are
 // the launch audience: everyone who declared this exact pain gets pinged.
-router.post("/:id/ship", requireAuth, (req, res) => {
+router.post("/:id/ship", requireAuth, async (req, res) => {
   const { startup_id } = req.body;
-  const problem = db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
-  const startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(startup_id);
+  const startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(startup_id);
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.owner_user_id !== req.userId) {
     return res.status(403).json({ error: "You can only ship on behalf of your own startup." });
   }
 
-  const commitment = db
+  const commitment = await db
     .prepare("SELECT * FROM commitments WHERE problem_id = ? AND startup_id = ?")
     .get(req.params.id, startup_id);
   if (!commitment) return res.status(404).json({ error: "Commit to this problem before shipping." });
@@ -412,10 +419,10 @@ router.post("/:id/ship", requireAuth, (req, res) => {
     return res.status(409).json({ error: "Already marked as shipped." });
   }
 
-  db.prepare("UPDATE commitments SET status = 'shipped' WHERE id = ?").run(commitment.id);
-  db.prepare("UPDATE problems SET status = 'solved' WHERE id = ?").run(req.params.id);
+  await db.prepare("UPDATE commitments SET status = 'shipped' WHERE id = ?").run(commitment.id);
+  await db.prepare("UPDATE problems SET status = 'solved' WHERE id = ?").run(req.params.id);
 
-  notifyFollowers(
+  await notifyFollowers(
     problem.id,
     req.userId,
     "status",
@@ -423,16 +430,16 @@ router.post("/:id/ship", requireAuth, (req, res) => {
     `/problems/${problem.id}`
   );
 
-  res.json({ problem: getFullProblem(req.params.id, req.userId) });
+  res.json({ problem: await getFullProblem(req.params.id, req.userId) });
 });
 
 // Discussion thread. Startups join in by commenting as their startup, which
 // is how they ask clarifying questions before committing to build.
-router.get("/:id/comments", optionalAuth, (req, res) => {
-  const problem = db.prepare("SELECT id FROM problems WHERE id = ?").get(req.params.id);
+router.get("/:id/comments", optionalAuth, async (req, res) => {
+  const problem = await db.prepare("SELECT id FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT c.id, c.body, c.created_at, c.user_id, c.startup_id,
               u.name AS author_name, s.name AS startup_name, s.claimed AS startup_claimed
@@ -458,8 +465,8 @@ router.get("/:id/comments", optionalAuth, (req, res) => {
   });
 });
 
-router.post("/:id/comments", requireAuth, (req, res) => {
-  const problem = db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+router.post("/:id/comments", requireAuth, async (req, res) => {
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
   const body = String(req.body.body || "").trim();
@@ -470,22 +477,22 @@ router.post("/:id/comments", requireAuth, (req, res) => {
 
   let startup = null;
   if (req.body.startup_id) {
-    startup = db.prepare("SELECT * FROM startups WHERE id = ?").get(req.body.startup_id);
+    startup = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.body.startup_id);
     if (!startup) return res.status(404).json({ error: "Startup not found." });
     if (startup.owner_user_id !== req.userId) {
       return res.status(403).json({ error: "You can only comment as a startup you own." });
     }
   }
 
-  db.prepare(
+  await db.prepare(
     "INSERT INTO comments (problem_id, user_id, startup_id, body) VALUES (?, ?, ?, ?)"
   ).run(req.params.id, req.userId, startup ? startup.id : null, body);
 
   if (problem.user_id !== req.userId) {
     const actor = startup
       ? startup.name
-      : db.prepare("SELECT name FROM users WHERE id = ?").get(req.userId).name;
-    notify(
+      : (await db.prepare("SELECT name FROM users WHERE id = ?").get(req.userId)).name;
+    await notify(
       problem.user_id,
       "comment",
       `${actor} commented on "${problem.title}"`,

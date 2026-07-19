@@ -10,8 +10,8 @@ function esc(s) {
 // SVG demand badge for a problem, embeddable anywhere via <img>. A startup
 // puts this on its own landing page to show live proof that N people want
 // the thing it's building, and every view links back to Solvyard.
-router.get("/problem/:id.svg", (req, res) => {
-  const problem = db.prepare("SELECT id, title FROM problems WHERE id = ?").get(req.params.id);
+router.get("/problem/:id.svg", async (req, res) => {
+  const problem = await db.prepare("SELECT id, title FROM problems WHERE id = ?").get(req.params.id);
 
   res.setHeader("Content-Type", "image/svg+xml");
   // Short cache so counts stay reasonably fresh without hammering the DB.
@@ -23,12 +23,12 @@ router.get("/problem/:id.svg", (req, res) => {
     );
   }
 
-  const votes = db
+  const votes = (await db
     .prepare("SELECT COUNT(*) AS score FROM votes WHERE problem_id = ? AND vote_type = 1")
-    .get(problem.id).score;
-  const followers = db
+    .get(problem.id)).score;
+  const followers = (await db
     .prepare("SELECT COUNT(*) AS c FROM problem_followers WHERE problem_id = ?")
-    .get(problem.id).c;
+    .get(problem.id)).c;
   const want = votes + followers;
 
   const label = want === 1 ? "person wants this" : "people want this";

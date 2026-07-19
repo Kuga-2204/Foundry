@@ -1,7 +1,7 @@
 // Seeds the startup directory with unclaimed sample profiles so matching and
 // browsing work before real partners are onboarded. Run with: npm run seed
 // Safe to re-run: it skips startups whose name already exists.
-import db from "./index.js";
+import db, { initDb } from "./index.js";
 
 const STARTUPS = [
   {
@@ -162,6 +162,8 @@ const STARTUPS = [
   },
 ];
 
+await initDb();
+
 const exists = db.prepare("SELECT id FROM startups WHERE name = ?");
 const insertStartup = db.prepare(
   `INSERT INTO startups (owner_user_id, name, tagline, description, website, category, claimed)
@@ -173,10 +175,12 @@ const insertStatement = db.prepare(
 
 let added = 0;
 for (const s of STARTUPS) {
-  if (exists.get(s.name)) continue;
-  const info = insertStartup.run(s.name, s.tagline, s.description, s.website, s.category);
-  for (const st of s.statements) insertStatement.run(info.lastInsertRowid, st);
+  if (await exists.get(s.name)) continue;
+  const info = await insertStartup.run(s.name, s.tagline, s.description, s.website, s.category);
+  for (const st of s.statements) await insertStatement.run(info.lastInsertRowid, st);
   added++;
 }
+
+await db.close();
 
 console.log(`Seed complete: ${added} startup(s) added, ${STARTUPS.length - added} already present.`);
