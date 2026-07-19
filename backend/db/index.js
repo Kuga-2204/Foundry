@@ -224,6 +224,25 @@ CREATE TABLE IF NOT EXISTS reports (
   reason TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Every problem list aggregates counts across these tables. Without an index
+-- on the foreign key, Postgres sequentially scans the whole table for each
+-- aggregate, which gets slow as soon as there is real data.
+CREATE INDEX IF NOT EXISTS idx_votes_problem       ON votes(problem_id);
+CREATE INDEX IF NOT EXISTS idx_votes_user          ON votes(user_id);
+CREATE INDEX IF NOT EXISTS idx_followers_problem   ON problem_followers(problem_id);
+CREATE INDEX IF NOT EXISTS idx_followers_user      ON problem_followers(user_id);
+CREATE INDEX IF NOT EXISTS idx_solutions_problem   ON solutions(problem_id);
+CREATE INDEX IF NOT EXISTS idx_solutions_startup   ON solutions(startup_id);
+CREATE INDEX IF NOT EXISTS idx_comments_problem    ON comments(problem_id);
+CREATE INDEX IF NOT EXISTS idx_media_problem       ON problem_media(problem_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_solution    ON reviews(solution_id);
+CREATE INDEX IF NOT EXISTS idx_commitments_problem ON commitments(problem_id);
+CREATE INDEX IF NOT EXISTS idx_commitments_startup ON commitments(startup_id);
+CREATE INDEX IF NOT EXISTS idx_statements_startup  ON startup_statements(startup_id);
+CREATE INDEX IF NOT EXISTS idx_problems_user       ON problems(user_id);
+CREATE INDEX IF NOT EXISTS idx_problems_created    ON problems(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user  ON notifications(user_id, read);
 `);
 }
 

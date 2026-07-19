@@ -40,7 +40,22 @@ function startupIndex(startup, statements) {
   return weights;
 }
 
+// The live "does a startup already solve this?" check runs on every debounced
+// keystroke while someone types a problem, and each call reloaded the whole
+// startup directory. The directory changes rarely, so cache it briefly: a
+// person typing for a minute now costs one load instead of dozens.
+const DIRECTORY_TTL_MS = 30_000;
+let directoryCache = null;
+let directoryCachedAt = 0;
+
+export function invalidateStartupDirectory() {
+  directoryCache = null;
+}
+
 async function loadStartupsWithStatements() {
+  if (directoryCache && Date.now() - directoryCachedAt < DIRECTORY_TTL_MS) {
+    return directoryCache;
+  }
   const startups = await db.prepare("SELECT * FROM startups").all();
   const statements = await db.prepare("SELECT * FROM startup_statements").all();
   const byStartup = new Map();
@@ -48,10 +63,12 @@ async function loadStartupsWithStatements() {
     if (!byStartup.has(s.startup_id)) byStartup.set(s.startup_id, []);
     byStartup.get(s.startup_id).push(s);
   }
-  return startups.map((st) => ({
+  directoryCache = startups.map((st) => ({
     startup: st,
     statements: byStartup.get(st.id) || [],
   }));
+  directoryCachedAt = Date.now();
+  return directoryCache;
 }
 
 // Score every startup against a piece of problem text.
