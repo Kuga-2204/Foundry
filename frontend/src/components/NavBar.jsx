@@ -1,26 +1,32 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import NotificationsBell from "./NotificationsBell.jsx";
-import logoUrl from "../../assets/solvyard.png";
 
 export default function NavBar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useMediaQuery("(max-width: 760px)");
 
   return (
     <header style={styles.header}>
-      <div className="wrap" style={styles.inner}>
+      <div
+        className="wrap"
+        style={{ ...styles.inner, ...(isMobile ? styles.innerMobile : null) }}
+      >
         <Link to="/" style={styles.logo}>
-          <img src={logoUrl} alt="" style={styles.logoImage} />
+          <img src="/solvyard-bulb.png" alt="" style={styles.logoMark} />
           <span>
             solv<span style={styles.logoAccent}>yard</span>
           </span>
         </Link>
 
-        <nav style={styles.nav}>
+        {/* On mobile the links wrap to their own full-width row below, which
+            keeps the auth buttons from overflowing off the screen. */}
+        <nav style={{ ...styles.nav, ...(isMobile ? styles.navMobile : null) }}>
           <Link to="/problems" style={styles.link}>Problems</Link>
           <Link to="/startups" style={styles.link}>Startups</Link>
-          {user && <Link to="/post" style={styles.link}>Post a problem</Link>}
+          {user && <Link to="/post" style={styles.link}>Post</Link>}
           {user && <Link to="/dashboard" style={styles.link}>Dashboard</Link>}
         </nav>
 
@@ -28,7 +34,9 @@ export default function NavBar() {
           {user ? (
             <>
               <NotificationsBell />
-              <span style={styles.hello} className="mono">hi, {user.name.split(" ")[0]}</span>
+              {!isMobile && (
+                <span style={styles.hello} className="mono">hi, {user.name.split(" ")[0]}</span>
+              )}
               <button
                 className="btn btn-sm"
                 onClick={() => {
@@ -66,24 +74,35 @@ const styles = {
     height: 68,
     gap: 24,
   },
+  innerMobile: {
+    flexWrap: "wrap",
+    height: "auto",
+    paddingTop: 12,
+    paddingBottom: 12,
+    rowGap: 10,
+    columnGap: 12,
+  },
+  navMobile: {
+    order: 3,
+    width: "100%",
+    marginLeft: 0,
+    gap: 18,
+    overflowX: "auto",
+    flex: "none",
+  },
   logo: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
     fontFamily: "var(--display)",
     fontWeight: 700,
     fontSize: 21,
-    letterSpacing: 0,
+    letterSpacing: "-0.02em",
     flexShrink: 0,
     color: "var(--ink)",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
   },
-  logoImage: {
-    width: 48,
-    height: 48,
-    objectFit: "contain",
-    display: "block",
-  },
-  logoAccent: { color: "var(--signal)" },
+  logoMark: { height: 30, width: "auto", display: "block" },
+  logoAccent: { color: "var(--spark)" },
   nav: { display: "flex", gap: 22, flex: 1, marginLeft: 12 },
   link: { fontSize: 14.5, fontWeight: 500, color: "var(--text-dim)" },
   right: { display: "flex", alignItems: "center", gap: 12, flexShrink: 0 },

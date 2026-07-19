@@ -39,6 +39,20 @@ export function AuthProvider({ children }) {
     return data.user;
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    if (!token) return null;
+    const data = await api.me(token);
+    setUser(data.user);
+    return data.user;
+  }, [token]);
+
+  // Apply a session obtained outside the email/password flow (e.g. Google).
+  const setSession = useCallback((newToken, newUser) => {
+    localStorage.setItem("ph_token", newToken);
+    setToken(newToken);
+    setUser(newUser);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem("ph_token");
     setToken(null);
@@ -46,7 +60,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ token, user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ token, user, loading, login, register, logout, setSession, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -7,16 +7,30 @@ import StatusBadge from "../components/StatusBadge.jsx";
 
 const MAX_FILES = 4;
 const MAX_FILE_MB = 30;
+const DRAFT_KEY = "sy_post_draft";
 
-// Post a problem, with two live checks while the user types: does a startup
-// already solve this, and is the same problem already listed? Duplicates are
-// steered toward voting on the existing listing so demand stays concentrated.
+// Derive a title from the complaint when the user doesn't give one: first
+// line, trimmed to a sentence-ish length on a word boundary.
+function deriveTitle(body) {
+  const firstLine = String(body).split("\n")[0].trim();
+  if (firstLine.length <= 80) return firstLine;
+  const cut = firstLine.slice(0, 80);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trim() + "…";
+}
+
+// Post a problem. Quick by default: one complaint box, with title/category/
+// media tucked under "more options". Two live checks run while typing (does a
+// startup already solve this; is it already listed). The draft autosaves, and
+// people can write before signing up — the submit step gates on auth.
 export default function PostProblem() {
-  const { token } = useAuth();
+  const { token, user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState({ title: "", description: "", category: "General" });
   const [anonymous, setAnonymous] = useState(false);
+  const [anonymousHandle, setAnonymousHandle] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
   const [files, setFiles] = useState([]);
   const [matches, setMatches] = useState({ strong: [], adjacent: [] });
   const [similar, setSimilar] = useState([]);
@@ -29,6 +43,33 @@ export default function PostProblem() {
   useEffect(() => {
     api.categories().then((d) => setCategories(d.categories));
   }, []);
+
+  // Restore any saved draft on mount (survives navigating away to sign up).
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (saved && (saved.description || saved.title)) {
+        setForm({
+          title: saved.title || "",
+          description: saved.description || "",
+          category: saved.category || "General",
+        });
+        setAnonymous(!!saved.anonymous);
+        setAnonymousHandle(saved.anonymousHandle || "");
+        if (saved.title || saved.category !== "General" || saved.anonymous) setShowDetails(true);
+      }
+    } catch {
+      /* ignore malformed draft */
+    }
+  }, []);
+
+  // Autosave the text draft (files can't be persisted; that's fine).
+  useEffect(() => {
+    const hasContent = form.title.trim() || form.description.trim();
+    if (hasContent) {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...form, anonymous, anonymousHandle }));
+    }
+  }, [form, anonymous, anonymousHandle]);
 
   const text = `${form.title} ${form.description}`.trim();
 
@@ -104,20 +145,39 @@ export default function PostProblem() {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+
+    const description = form.description.trim();
+    if (!description) {
+      setError("Describe the problem before posting.");
+      return;
+    }
+    const title = form.title.trim() || deriveTitle(description);
+
+    // Post now, account later: if they're not signed in, keep the draft
+    // (already autosaved) and send them to sign up, returning here after.
+    if (!token) {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...form, title, anonymous, anonymousHandle }));
+      navigate("/register?next=/post");
+      return;
+    }
+
     setBusy(true);
     try {
       let payload;
       if (files.length > 0) {
         payload = new FormData();
-        payload.append("title", form.title);
-        payload.append("description", form.description);
+        payload.append("title", title);
+        payload.append("description", description);
         payload.append("category", form.category);
         payload.append("anonymous", anonymous ? "true" : "false");
+        if (anonymous && anonymousHandle.trim()) payload.append("anonymousHandle", anonymousHandle.trim());
         files.forEach((f) => payload.append("media", f));
       } else {
-        payload = { ...form, anonymous };
+        payload = { title, description, category: form.category, anonymous, anonymousHandle };
       }
       const data = await api.createProblem(payload, token);
+      if (anonymous) await refreshUser();
+      localStorage.removeItem(DRAFT_KEY);
       navigate(`/problems/${data.problem.id}`);
     } catch (err) {
       setError(err.message);
@@ -132,113 +192,154 @@ export default function PostProblem() {
     <div className="wrap" style={styles.wrap}>
       <div style={styles.columns}>
         <div className="card" style={styles.card}>
-          <h1 style={styles.h1}>What's your problem?</h1>
+          <h1 style={styles.h1}>What's bugging you?</h1>
           <p style={styles.sub}>
-            Describe it and we'll check if a startup already solves it. If nothing exists
-            yet, list it: you'll be notified the moment someone picks it up.
+            Describe it like you'd complain to a friend. We'll check if a startup already
+            solves it; if not, you'll be the first to know when one picks it up.
           </p>
 
           {error && <div className="error-banner">{error}</div>}
 
           <form onSubmit={submit}>
             <div className="field">
-              <label>Title</label>
-              <input
-                required
-                placeholder='e.g. "No easy way to split rent fairly by usage"'
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-              />
-            </div>
-
-            <div className="field">
-              <label>Description</label>
               <textarea
-                required
+                autoFocus
                 rows={6}
-                placeholder="What's the problem? Who has it? What have you already tried?"
+                placeholder="e.g. Splitting rent with flatmates always turns into an argument about who used what…"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
+                style={styles.mainInput}
               />
             </div>
 
-            <div className="field">
-              <label>Category</label>
-              <select
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              >
-                {categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="field">
-              <label>Photos or videos (optional)</label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  addFiles(e.target.files);
-                  e.target.value = "";
-                }}
-              />
+            {!showDetails ? (
               <button
                 type="button"
-                className="btn btn-sm"
-                style={{ alignSelf: "flex-start" }}
-                onClick={() => fileInputRef.current?.click()}
-                disabled={files.length >= MAX_FILES}
+                onClick={() => setShowDetails(true)}
+                style={styles.moreToggle}
               >
-                + Add photos / videos ({files.length}/{MAX_FILES})
+                + Add a title, category, or photos
               </button>
-              {previews.length > 0 && (
-                <div style={styles.previewRow}>
-                  {previews.map((p, i) => (
-                    <div key={p.url} style={styles.previewThumb}>
-                      {p.isVideo ? (
-                        <video src={p.url} style={styles.previewMedia} muted />
-                      ) : (
-                        <img src={p.url} alt={p.name} style={styles.previewMedia} />
-                      )}
-                      <button
-                        type="button"
-                        aria-label={`Remove ${p.name}`}
-                        style={styles.previewRemove}
-                        onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
-                      >
-                        ×
-                      </button>
-                      {p.isVideo && <span style={styles.videoTag}>video</span>}
-                    </div>
-                  ))}
+            ) : (
+              <div style={styles.detailsBox}>
+                <div className="field">
+                  <label>Title <span style={styles.optional}>(optional — we'll make one from your description)</span></label>
+                  <input
+                    placeholder='e.g. "No fair way to split rent by usage"'
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  />
                 </div>
-              )}
-            </div>
 
-            <label style={styles.anonRow}>
-              <input
-                type="checkbox"
-                checked={anonymous}
-                onChange={(e) => setAnonymous(e.target.checked)}
-                style={{ marginTop: 3 }}
-              />
-              <span>
-                <span style={{ fontWeight: 600, fontSize: 14 }}>Post anonymously</span>
-                <span style={styles.anonHint}>
-                  Your name won't be shown anywhere on this problem. It stays linked to
-                  your account privately, so you'll still get updates and can review fixes.
-                </span>
-              </span>
-            </label>
+                <div className="field">
+                  <label>Category</label>
+                  <select
+                    value={form.category}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  >
+                    {categories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
 
-            <button className="btn btn-primary" style={{ width: "100%" }} disabled={busy}>
-              {busy ? "Posting…" : hasMatches ? "None of these fit, post my problem" : "Post problem"}
+                <div className="field">
+                  <label>Photos or videos (optional)</label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      addFiles(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{ alignSelf: "flex-start" }}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={files.length >= MAX_FILES}
+                  >
+                    + Add photos / videos ({files.length}/{MAX_FILES})
+                  </button>
+                  {previews.length > 0 && (
+                    <div style={styles.previewRow}>
+                      {previews.map((p, i) => (
+                        <div key={p.url} style={styles.previewThumb}>
+                          {p.isVideo ? (
+                            <video src={p.url} style={styles.previewMedia} muted />
+                          ) : (
+                            <img src={p.url} alt={p.name} style={styles.previewMedia} />
+                          )}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${p.name}`}
+                            style={styles.previewRemove}
+                            onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
+                          >
+                            ×
+                          </button>
+                          {p.isVideo && <span style={styles.videoTag}>video</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <label style={styles.anonRow}>
+                  <input
+                    type="checkbox"
+                    checked={anonymous}
+                    onChange={(e) => setAnonymous(e.target.checked)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>Post anonymously</span>
+                    <span style={styles.anonHint}>
+                      Your name won't be shown. Your anonymous name stays linked to your account
+                      privately, so you will still get updates and can review fixes.
+                    </span>
+                    {anonymous && (
+                      <span style={styles.anonHandleWrap}>
+                        <label htmlFor="anonymous-handle" style={styles.anonHandleLabel}>Anonymous name</label>
+                        <input
+                          id="anonymous-handle"
+                          value={anonymousHandle}
+                          onChange={(e) => setAnonymousHandle(e.target.value)}
+                          placeholder={user?.anon_handle || "e.g. Quiet Compass"}
+                          maxLength={30}
+                          style={styles.anonHandleInput}
+                        />
+                        <span style={styles.anonHandleHelp}>
+                          {user?.anon_handle
+                            ? `Your name is “${user.anon_handle}”. You can change it here anytime — it updates on all your anonymous posts.`
+                            : "Leave blank and we'll make you a memorable, unique name. You can change it later."}
+                        </span>
+                      </span>
+                    )}
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <button className="btn btn-primary" style={{ width: "100%", marginTop: 18 }} disabled={busy}>
+              {busy
+                ? "Posting…"
+                : !user
+                ? "Continue to post →"
+                : hasMatches
+                ? "None of these fit, post my problem"
+                : "Post problem"}
             </button>
+            {!user && (
+              <p style={styles.authNote}>
+                Write it now — we'll ask you to create a quick account to publish, and your
+                draft is saved.
+              </p>
+            )}
           </form>
         </div>
 
@@ -324,6 +425,14 @@ const styles = {
   card: { width: 520, maxWidth: "100%", padding: 36 },
   h1: { fontSize: 26, marginBottom: 8 },
   sub: { fontSize: 14, color: "var(--text-dim)", marginBottom: 24, lineHeight: 1.5 },
+  mainInput: { fontSize: 15.5, lineHeight: 1.55, padding: "13px 14px" },
+  moreToggle: {
+    background: "none", border: "none", padding: 0, cursor: "pointer", marginTop: 2,
+    fontSize: 13.5, fontWeight: 600, color: "var(--build)", fontFamily: "inherit",
+  },
+  detailsBox: { marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line)" },
+  optional: { fontWeight: 400, fontSize: 12, color: "var(--text-dim)" },
+  authNote: { fontSize: 12.5, color: "var(--text-dim)", textAlign: "center", marginTop: 10, lineHeight: 1.45 },
   previewRow: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 },
   previewThumb: {
     position: "relative", width: 92, height: 92, borderRadius: 3,
@@ -345,6 +454,13 @@ const styles = {
     cursor: "pointer", background: "#fff",
   },
   anonHint: { display: "block", fontSize: 12.5, color: "var(--text-dim)", lineHeight: 1.45, marginTop: 3 },
+  anonHandleWrap: { display: "block", marginTop: 12 },
+  anonHandleLabel: { display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-dim)", marginBottom: 5 },
+  anonHandleInput: {
+    width: "100%", padding: "9px 10px", borderRadius: 3, border: "1.5px solid var(--line)",
+    background: "#fff", color: "var(--text)", fontSize: 13.5,
+  },
+  anonHandleHelp: { display: "block", fontSize: 11.5, color: "var(--text-dim)", marginTop: 5, lineHeight: 1.4 },
   matchPanel: { width: 360, maxWidth: "100%", position: "sticky", top: 92 },
   dupBox: {
     border: "1.5px solid var(--signal)", borderRadius: 4, padding: 18,

@@ -1,10 +1,15 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import GoogleButton from "../components/GoogleButton.jsx";
 
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // New users land on the post page ("what's bugging you") by default, or
+  // wherever they were headed before signing up (e.g. a saved draft).
+  const next = params.get("next") || "/post";
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -15,7 +20,7 @@ export default function Register() {
     setBusy(true);
     try {
       await register(form.name, form.email, form.password);
-      navigate("/problems");
+      navigate(next);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -30,6 +35,8 @@ export default function Register() {
         <p style={styles.sub}>Post problems, vote, review, and list your startup, all with one account.</p>
 
         {error && <div className="error-banner">{error}</div>}
+
+        <GoogleButton onDone={() => navigate(next)} onError={setError} />
 
         <form onSubmit={submit}>
           <div className="field">

@@ -11,7 +11,8 @@
   --paper-dim: #e2e5d8;
   --line: rgba(15, 22, 38, 0.12);
   --line-on-dark: rgba(238, 240, 230, 0.16);
-  --spark: #ffb020;        /* amber: an idea / a problem */
+  --spark: #ff7a1a;        /* orange: an idea / a problem */
+  --spark-soft: #ffe1c2;   /* pale tint of spark, for badge backgrounds */
   --build: #3ddc97;        /* mint: validated / shipped */
   --signal: #ff6b4a;       /* coral: downvote / attention */
   --text: #101425;
@@ -139,6 +140,15 @@ button {
 }
 
 ::selection { background: var(--spark); color: var(--ink); }
+
+/* Media never overflows its container on small screens. */
+img, video, svg { max-width: 100%; }
+
+@media (max-width: 760px) {
+  .wrap { padding: 0 16px; }
+  .btn { padding: 11px 18px; }
+  .btn-sm { padding: 8px 12px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

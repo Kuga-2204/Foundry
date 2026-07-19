@@ -13,31 +13,38 @@ export default function VoteControl({ problem, onVote, size = "md" }) {
     onVote?.(type);
   };
 
+  const up = problem.myVote === 1;
+  const down = problem.myVote === -1;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
       <button
         aria-label="Upvote: I have this problem too"
+        aria-pressed={up}
         title="I have this problem too"
         onClick={() => cast(1)}
         style={{
           ...btnStyle(dim),
-          color: problem.myVote === 1 ? "var(--build)" : "var(--text-dim)",
-          borderColor: problem.myVote === 1 ? "var(--build)" : "var(--line)",
+          background: up ? "var(--build)" : "#fff",
+          color: up ? "#fff" : "var(--text-dim)",
+          borderColor: up ? "var(--build)" : "var(--line)",
         }}
       >
         ▲
       </button>
       <span className="mono" style={{ fontSize: fontSize - 8, fontWeight: 600, minWidth: 24, textAlign: "center" }}>
-        {problem.score}
+        {problem.upvotes ?? problem.score ?? 0}
       </span>
       <button
         aria-label="Downvote: not relevant to me"
+        aria-pressed={down}
         title="Not relevant to me"
         onClick={() => cast(-1)}
         style={{
           ...btnStyle(dim),
-          color: problem.myVote === -1 ? "var(--signal)" : "var(--text-dim)",
-          borderColor: problem.myVote === -1 ? "var(--signal)" : "var(--line)",
+          background: down ? "var(--signal)" : "#fff",
+          color: down ? "#fff" : "var(--text-dim)",
+          borderColor: down ? "var(--signal)" : "var(--line)",
         }}
       >
         ▼

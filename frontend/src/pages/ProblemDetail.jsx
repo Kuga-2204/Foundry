@@ -2,9 +2,11 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
-import VoteControl from "../components/VoteControl.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import StartupCard from "../components/StartupCard.jsx";
+import ShareButton from "../components/ShareButton.jsx";
+import ReportButton from "../components/ReportButton.jsx";
+import MeTooButton from "../components/MeTooButton.jsx";
 import { StarsDisplay, StarsInput } from "../components/Stars.jsx";
 import { formatDate, OUTCOME_LABELS, OUTCOME_COLORS } from "../utils.js";
 
@@ -110,7 +112,6 @@ export default function ProblemDetail() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card" style={styles.problemCard}>
-        <VoteControl problem={problem} onVote={handleVote} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.badgeRow}>
             <span style={styles.category}>{problem.category}</span>
@@ -118,15 +119,40 @@ export default function ProblemDetail() {
           </div>
           <h1 style={styles.title}>{problem.title}</h1>
           <p style={styles.meta}>
-            Posted by {problem.author_name} · {formatDate(problem.created_at)} ·{" "}
-            {problem.followerCount} following
+            Posted by{" "}
+            {problem.user_id ? (
+              <Link to={`/users/${problem.user_id}`} style={styles.authorLink}>
+                {problem.author_name}
+              </Link>
+            ) : (
+              problem.author_name
+            )}{" "}
+            · {formatDate(problem.created_at)} · {problem.followerCount} following
           </p>
           <p style={styles.desc}>{problem.description}</p>
           {problem.media?.length > 0 && <MediaGallery media={problem.media} />}
           <div style={styles.problemActions}>
+            <MeTooButton problem={problem} onVoted={(p) => setProblem(p)} />
+            <button
+              className="btn btn-sm"
+              aria-pressed={problem.myVote === -1}
+              title="Not relevant to me"
+              onClick={() => (user ? handleVote(-1) : handleVote(null, "auth-required"))}
+              style={
+                problem.myVote === -1
+                  ? { background: "var(--signal)", borderColor: "var(--signal)", color: "#fff" }
+                  : undefined
+              }
+            >
+              {problem.myVote === -1 ? "✓ Not for me" : "Not relevant"}
+            </button>
             <button className="btn btn-sm" onClick={handleFollow}>
               {problem.isFollowing ? "Following ✓" : "Follow for updates"}
             </button>
+            <ShareButton problem={problem} />
+            <span style={{ marginLeft: "auto", alignSelf: "center" }}>
+              <ReportButton targetType="problem" targetId={problem.id} />
+            </span>
           </div>
         </div>
       </div>
@@ -335,6 +361,10 @@ function Discussion({ problemId, user, token, myStartups }) {
                       <span className="mono" style={styles.startupChip}>STARTUP</span>
                       <span style={styles.commentVia}>via {c.author_name}</span>
                     </>
+                  ) : c.author_id ? (
+                    <Link to={`/users/${c.author_id}`} style={{ fontWeight: 600, fontSize: 13.5 }}>
+                      {c.author_name}{c.isMine ? " (you)" : ""}
+                    </Link>
                   ) : (
                     <strong style={{ fontSize: 13.5 }}>
                       {c.author_name}
@@ -342,7 +372,10 @@ function Discussion({ problemId, user, token, myStartups }) {
                     </strong>
                   )}
                 </span>
-                <span className="mono" style={styles.commentDate}>{formatDate(c.created_at)}</span>
+                <span style={styles.commentHeadRight}>
+                  <span className="mono" style={styles.commentDate}>{formatDate(c.created_at)}</span>
+                  <ReportButton targetType="comment" targetId={c.id} />
+                </span>
               </div>
               <p style={styles.commentBody}>{c.body}</p>
             </div>
@@ -468,6 +501,46 @@ function StartupActions({ problem, commitments, myStartups, token, onChanged }) 
           </span>
         )}
       </div>
+
+      <BadgeEmbed problemId={problem.id} />
+    </div>
+  );
+}
+
+// Copyable snippet so a startup can show live demand for this problem on its
+// own site. Every embed is a backlink to Solvyard.
+function BadgeEmbed({ problemId }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const badgeUrl = `${window.location.origin}/badge/problem/${problemId}.svg`;
+  const pageUrl = `${window.location.origin}/problems/${problemId}`;
+  const snippet = `<a href="${pageUrl}" target="_blank" rel="noopener"><img src="${badgeUrl}" alt="See how many people want this on Solvyard" width="240" height="54"></a>`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard blocked; the textarea below is selectable as fallback */
+    }
+  };
+
+  return (
+    <div style={styles.embedWrap}>
+      <button style={styles.embedToggle} onClick={() => setOpen((v) => !v)}>
+        {open ? "Hide demand badge" : "Embed a demand badge on your site ↗"}
+      </button>
+      {open && (
+        <div style={styles.embedBody}>
+          <img src={badgeUrl} alt="Demand badge preview" width="240" height="54" style={{ marginBottom: 10 }} />
+          <textarea readOnly value={snippet} style={styles.embedCode} onClick={(e) => e.target.select()} />
+          <button className="btn btn-sm" onClick={copy} style={{ marginTop: 8 }}>
+            {copied ? "Copied ✓" : "Copy embed code"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -692,7 +765,7 @@ const styles = {
   title: { fontSize: 26, fontWeight: 700, margin: "12px 0 8px" },
   meta: { fontSize: 13, color: "var(--text-dim)", marginBottom: 16 },
   desc: { fontSize: 15.5, lineHeight: 1.6, color: "var(--text)" },
-  problemActions: { marginTop: 18, display: "flex", gap: 10 },
+  problemActions: { marginTop: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
   commitmentsBox: {
     border: "1.5px solid var(--build)", borderRadius: 4, padding: "14px 18px",
     marginBottom: 24, background: "#fff",
@@ -765,6 +838,19 @@ const styles = {
   },
   commentVia: { fontSize: 12, color: "var(--text-dim)" },
   commentDate: { fontSize: 11.5, color: "var(--text-dim)" },
+  commentHeadRight: { display: "flex", alignItems: "center", gap: 12 },
+  authorLink: { fontWeight: 600, color: "var(--ink)" },
+  embedWrap: { marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 12 },
+  embedToggle: {
+    background: "none", border: "none", padding: 0, cursor: "pointer",
+    fontSize: 12.5, fontWeight: 600, color: "var(--build)", fontFamily: "inherit",
+  },
+  embedBody: { marginTop: 12 },
+  embedCode: {
+    width: "100%", minHeight: 66, fontFamily: "var(--mono)", fontSize: 11.5,
+    padding: 10, border: "1.5px solid var(--line)", borderRadius: 3,
+    background: "var(--paper-dim)", color: "var(--text)", resize: "vertical",
+  },
   commentBody: { fontSize: 14, lineHeight: 1.55, color: "var(--text)", whiteSpace: "pre-wrap" },
   commentForm: { padding: 18 },
   commentFormRow: { display: "flex", justifyContent: "flex-end", gap: 12, alignItems: "center", flexWrap: "wrap" },

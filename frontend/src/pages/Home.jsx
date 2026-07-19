@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useMediaQuery } from "../hooks/useMediaQuery.js";
 import { api } from "../api.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 
@@ -68,15 +69,15 @@ function TrendingStrip() {
 
 /* ---------------- Hero: the schematic ---------------- */
 function Hero({ user }) {
+  const isMobile = useMediaQuery("(max-width: 860px)");
   return (
     <section style={s.hero}>
-      <div className="wrap" style={s.heroInner}>
+      <div className="wrap" style={{ ...s.heroInner, ...(isMobile ? s.heroInnerMobile : null) }}>
         <div style={s.heroText}>
           <div style={s.eyebrow} className="mono">is there a startup for that?</div>
-          <h1 style={s.h1}>
-            Someone might already be
-            <br />
-            solving your <span style={{ color: "var(--spark)" }}>problem.</span>
+          <h1 style={{ ...s.h1, ...(isMobile ? s.h1Mobile : null) }}>
+            Someone might already be solving your{" "}
+            <span style={{ color: "var(--spark)" }}>problem.</span>
           </h1>
           <p style={s.sub}>
             Describe a problem from your daily life and Solvyard matches you with startups
@@ -93,7 +94,9 @@ function Hero({ user }) {
           </div>
         </div>
 
-        <Schematic />
+        {/* The schematic is decorative; drop it on phones to save vertical
+            space and keep the hero focused on the headline + CTAs. */}
+        {!isMobile && <Schematic />}
       </div>
     </section>
   );
@@ -101,71 +104,96 @@ function Hero({ user }) {
 
 function Schematic() {
   return (
-    <svg viewBox="0 0 480 420" style={s.schematic} aria-hidden="true">
+    <svg viewBox="0 0 520 440" style={s.schematic} aria-hidden="true">
       <defs>
-        <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
-          <path d="M 24 0 L 0 0 0 24" fill="none" stroke="var(--line-on-dark)" strokeWidth="1" />
+        <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
+          <path d="M 26 0 L 0 0 0 26" fill="none" stroke="var(--line-on-dark)" strokeWidth="1" />
         </pattern>
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto">
+          <path d="M0,0 L9,5 L0,10 z" fill="var(--text-on-dark-dim)" />
+        </marker>
       </defs>
-      <rect width="480" height="420" fill="url(#grid)" />
+      <rect width="520" height="440" fill="url(#grid)" />
 
       {/* crop marks */}
-      {[[8,8],[472,8],[8,412],[472,412]].map(([x,y],i) => (
+      {[[24, 24], [496, 24], [24, 416], [496, 416]].map(([x, y], i) => (
         <g key={i} stroke="var(--text-on-dark-dim)" strokeWidth="1.5">
-          <line x1={x-6} y1={y} x2={x+6} y2={y} />
-          <line x1={x} y1={y-6} x2={x} y2={y+6} />
+          <line x1={x - 7} y1={y} x2={x + 7} y2={y} />
+          <line x1={x} y1={y - 7} x2={x} y2={y + 7} />
         </g>
       ))}
 
-      {/* Problem card */}
-      <g transform="translate(24,30)">
-        <rect width="168" height="92" rx="3" fill="var(--ink-soft)" stroke="var(--spark)" strokeWidth="1.5" />
-        <text x="14" y="24" fill="var(--spark)" fontFamily="IBM Plex Mono" fontSize="10" letterSpacing="1">01 / PROBLEM</text>
-        <text x="14" y="46" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="13" fontWeight="600">"Rent splitting</text>
-        <text x="14" y="63" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="13" fontWeight="600">always causes</text>
-        <text x="14" y="80" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="13" fontWeight="600">a fight."</text>
+      {/* connectors, under the cards */}
+      <path d="M 212 124 L 231 124" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" />
+      <path d="M 289 124 L 308 124" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
+      <path d="M 126 196 L 126 247" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
+      <path d="M 394 196 L 394 247" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
+
+      {/* 01 PROBLEM — top left */}
+      <g transform="translate(40,52)">
+        <rect width="172" height="144" rx="6" fill="var(--ink-soft)" stroke="var(--spark)" strokeWidth="1.5" />
+        <rect x="16" y="15" width="28" height="20" rx="4" fill="var(--spark)" />
+        <text x="30" y="29.5" textAnchor="middle" fill="var(--ink)" fontFamily="IBM Plex Mono" fontSize="11" fontWeight="700">01</text>
+        <text x="52" y="29" fill="var(--spark)" fontFamily="IBM Plex Mono" fontSize="11" letterSpacing="1.5">PROBLEM</text>
+        <line x1="16" y1="47" x2="156" y2="47" stroke="var(--spark)" strokeOpacity="0.22" strokeWidth="1" />
+        <text x="16" y="76" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="15.5" fontWeight="600">"Rent splitting</text>
+        <text x="16" y="99" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="15.5" fontWeight="600">always causes</text>
+        <text x="16" y="122" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="15.5" fontWeight="600">a fight."</text>
       </g>
 
-      {/* vote dial */}
-      <g transform="translate(210,50)">
-        <circle cx="0" cy="0" r="30" fill="none" stroke="var(--build)" strokeWidth="1.5" strokeDasharray="4 3" />
-        <text x="0" y="-4" textAnchor="middle" fill="var(--build)" fontFamily="IBM Plex Mono" fontSize="16" fontWeight="600">+41</text>
-        <text x="0" y="12" textAnchor="middle" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="8">votes</text>
+      {/* vote dial, on the problem to match connector */}
+      <g transform="translate(260,124)">
+        <circle cx="0" cy="0" r="28" fill="var(--ink)" stroke="var(--build)" strokeWidth="1.5" strokeDasharray="3.5 3" />
+        <text x="0" y="-2" textAnchor="middle" fill="var(--build)" fontFamily="IBM Plex Mono" fontSize="16" fontWeight="700">+41</text>
+        <text x="0" y="13" textAnchor="middle" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="7.5" letterSpacing="1.5">VOTES</text>
       </g>
 
-      <line x1="192" y1="76" x2="182" y2="76" stroke="var(--text-on-dark-dim)" strokeDasharray="3 3" />
-
-      {/* arrow to matched startup */}
-      <path d="M 240 50 L 300 50" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
-      <defs>
-        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 z" fill="var(--text-on-dark-dim)" />
-        </marker>
-      </defs>
-
-      {/* Matched startup card */}
-      <g transform="translate(300,10)">
-        <rect width="156" height="92" rx="3" fill="var(--ink-soft)" stroke="var(--build)" strokeWidth="1.5" />
-        <text x="14" y="24" fill="var(--build)" fontFamily="IBM Plex Mono" fontSize="10" letterSpacing="1">02 / MATCH</text>
-        <text x="14" y="46" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="13" fontWeight="600">SplitFair</text>
-        <text x="14" y="63" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11">already solves</text>
-        <text x="14" y="79" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11">this exact pain</text>
+      {/* 02 MATCH — top right */}
+      <g transform="translate(308,52)">
+        <rect width="172" height="144" rx="6" fill="var(--ink-soft)" stroke="var(--build)" strokeWidth="1.5" />
+        <rect x="16" y="15" width="28" height="20" rx="4" fill="var(--build)" />
+        <text x="30" y="29.5" textAnchor="middle" fill="var(--ink)" fontFamily="IBM Plex Mono" fontSize="11" fontWeight="700">02</text>
+        <text x="52" y="29" fill="var(--build)" fontFamily="IBM Plex Mono" fontSize="11" letterSpacing="1.5">MATCH</text>
+        <line x1="16" y1="47" x2="156" y2="47" stroke="var(--build)" strokeOpacity="0.22" strokeWidth="1" />
+        <text x="16" y="80" fill="var(--text-on-dark)" fontFamily="Space Grotesk" fontSize="18" fontWeight="700">SplitFair</text>
+        <text x="16" y="105" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="12">already solves</text>
+        <text x="16" y="124" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="12">this exact pain</text>
       </g>
 
-      {/* arrow down to review */}
-      <path d="M 378 102 L 378 140" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
+      {/* PEOPLE WAITING — bottom left, balances the composition */}
+      <g transform="translate(40,250)">
+        <rect width="172" height="118" rx="6" fill="var(--ink-soft)" stroke="var(--signal)" strokeWidth="1.5" />
+        <text x="16" y="29" fill="var(--signal)" fontFamily="IBM Plex Mono" fontSize="11" letterSpacing="1.2">PEOPLE WAITING</text>
+        <line x1="16" y1="43" x2="156" y2="43" stroke="var(--signal)" strokeOpacity="0.22" strokeWidth="1" />
+        {[
+          ["var(--spark)", 30, "R"],
+          ["var(--build)", 49, "M"],
+          ["var(--signal)", 68, "K"],
+        ].map(([fill, cx, ch], i) => (
+          <g key={i}>
+            <circle cx={cx} cy="74" r="13" fill={fill} stroke="var(--ink-soft)" strokeWidth="3" />
+            <text x={cx} y="78" textAnchor="middle" fill="var(--ink)" fontFamily="Space Grotesk" fontSize="11" fontWeight="700">{ch}</text>
+          </g>
+        ))}
+        <circle cx="87" cy="74" r="13" fill="none" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="2.5 2" />
+        <text x="87" y="77.5" textAnchor="middle" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="8.5" fontWeight="600">+38</text>
+        <text x="16" y="104" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="10.5">all pinged when it ships</text>
+      </g>
 
-      {/* Review card */}
-      <g transform="translate(300,150)">
-        <rect width="156" height="70" rx="3" fill="var(--ink-soft)" stroke="var(--line-on-dark)" strokeWidth="1.5" />
-        <text x="14" y="22" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="10" letterSpacing="1">03 / VERIFY</text>
-        <text x="14" y="44" fill="var(--spark)" fontFamily="Inter" fontSize="15">★★★★★</text>
-        <text x="14" y="60" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="10.5">"solved it" (Alice)</text>
+      {/* 03 VERIFY — bottom right */}
+      <g transform="translate(308,250)">
+        <rect width="172" height="118" rx="6" fill="var(--ink-soft)" stroke="var(--text-on-dark-dim)" strokeOpacity="0.5" strokeWidth="1.5" />
+        <rect x="16" y="15" width="28" height="20" rx="4" fill="var(--text-on-dark-dim)" />
+        <text x="30" y="29.5" textAnchor="middle" fill="var(--ink)" fontFamily="IBM Plex Mono" fontSize="11" fontWeight="700">03</text>
+        <text x="52" y="29" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="11" letterSpacing="1.5">VERIFY</text>
+        <line x1="16" y1="47" x2="156" y2="47" stroke="var(--text-on-dark-dim)" strokeOpacity="0.22" strokeWidth="1" />
+        <text x="16" y="79" fill="var(--spark)" fontFamily="Inter" fontSize="17" letterSpacing="3">★★★★★</text>
+        <text x="16" y="104" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11.5">"solved it" — Alice</text>
       </g>
 
       {/* annotation footer */}
-      <text x="24" y="400" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="10">
-        FIG. 1 / PROBLEM TO STARTUP, MATCHED AND VERIFIED
+      <text x="40" y="410" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="9.5" letterSpacing="0.5">
+        FIG. 1 / PROBLEM → STARTUP, MATCHED &amp; VERIFIED
       </text>
     </svg>
   );
@@ -222,9 +250,10 @@ function Pipeline() {
 
 /* ---------------- Why both sides come here ---------------- */
 function WhyBoth() {
+  const isMobile = useMediaQuery("(max-width: 760px)");
   return (
     <section style={s.why}>
-      <div className="wrap" style={s.whyGrid}>
+      <div className="wrap" style={{ ...s.whyGrid, ...(isMobile ? s.whyGridMobile : null) }}>
         <div style={s.whyCol}>
           <div style={s.whyEyebrow} className="mono">FOR PEOPLE WITH PROBLEMS</div>
           <h3 style={s.whyTitle}>Stop googling badly. Ask the board that knows.</h3>
@@ -235,7 +264,7 @@ function WhyBoth() {
             moment that changes.
           </p>
         </div>
-        <div style={s.whyDivider} />
+        {!isMobile && <div style={s.whyDivider} />}
         <div style={s.whyCol}>
           <div style={s.whyEyebrow} className="mono">FOR STARTUPS</div>
           <h3 style={s.whyTitle}>Meet users describing the exact pain you solve.</h3>
@@ -274,7 +303,7 @@ function Footer() {
     <footer style={s.footer}>
       <div className="wrap" style={s.footerInner}>
         <span className="mono" style={{ fontSize: 12.5 }}>
-          solv<span style={{ color: "var(--signal)" }}>yard</span>
+          solv<span style={{ color: "var(--spark)" }}>yard</span>
         </span>
         <span style={{ fontSize: 12.5, color: "var(--text-dim)" }}>
           Problems in. Products out.
@@ -287,9 +316,20 @@ function Footer() {
 const s = {
   hero: { background: "var(--ink)", padding: "72px 0 88px" },
   heroInner: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center" },
+  heroInnerMobile: { gridTemplateColumns: "1fr", gap: 0, padding: "0" },
+  h1Mobile: { fontSize: 34 },
   heroText: {},
   eyebrow: { color: "var(--spark)", fontSize: 12.5, letterSpacing: 1.5, marginBottom: 18, textTransform: "uppercase" },
-  h1: { fontSize: 44, lineHeight: 1.12, color: "var(--text-on-dark)", fontWeight: 700, marginBottom: 22 },
+  h1: {
+    fontSize: 42,
+    lineHeight: 1.14,
+    color: "var(--text-on-dark)",
+    fontWeight: 700,
+    marginBottom: 22,
+    letterSpacing: "-0.015em",
+    textWrap: "balance",
+    maxWidth: 520,
+  },
   sub: { fontSize: 16.5, lineHeight: 1.6, color: "var(--text-on-dark-dim)", maxWidth: 460, marginBottom: 32 },
   ctaRow: { display: "flex", gap: 14, flexWrap: "wrap" },
   schematic: { width: "100%", height: "auto", border: "1px solid var(--line-on-dark)", borderRadius: 4 },
@@ -313,7 +353,7 @@ const s = {
   pipeline: { padding: "88px 0", background: "var(--paper)" },
   sectionTitle: { fontSize: 32, fontWeight: 700, marginBottom: 10 },
   sectionSub: { fontSize: 15.5, color: "var(--text-dim)", marginBottom: 48 },
-  stepsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 28 },
+  stepsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 28 },
   step: { borderTop: "2.5px solid var(--ink)", paddingTop: 16 },
   stepNum: { fontSize: 13, fontWeight: 600, marginBottom: 10 },
   stepTitle: { fontSize: 18, fontWeight: 600, marginBottom: 10, lineHeight: 1.3 },
@@ -321,6 +361,7 @@ const s = {
 
   why: { background: "var(--paper-dim)", padding: "80px 0", borderTop: "1.5px solid var(--line)", borderBottom: "1.5px solid var(--line)" },
   whyGrid: { display: "grid", gridTemplateColumns: "1fr 1px 1fr", gap: 48 },
+  whyGridMobile: { gridTemplateColumns: "1fr", gap: 32 },
   whyCol: { maxWidth: 440 },
   whyDivider: { background: "var(--line)" },
   whyEyebrow: { fontSize: 12, letterSpacing: 1.2, color: "var(--text-dim)", marginBottom: 16 },

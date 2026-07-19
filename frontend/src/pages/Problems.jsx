@@ -3,6 +3,7 @@ import { useSearchParams, Link } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import ProblemCard from "../components/ProblemCard.jsx";
+import WelcomeBanner from "../components/WelcomeBanner.jsx";
 
 export default function Problems() {
   const { token } = useAuth();
@@ -71,6 +72,7 @@ export default function Problems() {
 
   return (
     <div className="wrap" style={styles.wrap}>
+      {!mine && <WelcomeBanner />}
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>
