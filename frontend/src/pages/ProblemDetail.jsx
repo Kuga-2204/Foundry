@@ -2,11 +2,11 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import VoteControl from "../components/VoteControl.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import StartupCard from "../components/StartupCard.jsx";
 import ShareButton from "../components/ShareButton.jsx";
 import ReportButton from "../components/ReportButton.jsx";
-import MeTooButton from "../components/MeTooButton.jsx";
 import { StarsDisplay, StarsInput } from "../components/Stars.jsx";
 import { formatDate, OUTCOME_LABELS, OUTCOME_COLORS } from "../utils.js";
 
@@ -112,6 +112,7 @@ export default function ProblemDetail() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card" style={styles.problemCard}>
+        <VoteControl problem={problem} onVote={handleVote} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.badgeRow}>
             <span style={styles.category}>{problem.category}</span>
@@ -132,20 +133,6 @@ export default function ProblemDetail() {
           <p style={styles.desc}>{problem.description}</p>
           {problem.media?.length > 0 && <MediaGallery media={problem.media} />}
           <div style={styles.problemActions}>
-            <MeTooButton problem={problem} onVoted={(p) => setProblem(p)} />
-            <button
-              className="btn btn-sm"
-              aria-pressed={problem.myVote === -1}
-              title="Not relevant to me"
-              onClick={() => (user ? handleVote(-1) : handleVote(null, "auth-required"))}
-              style={
-                problem.myVote === -1
-                  ? { background: "var(--signal)", borderColor: "var(--signal)", color: "#fff" }
-                  : undefined
-              }
-            >
-              {problem.myVote === -1 ? "✓ Not for me" : "Not relevant"}
-            </button>
             <button className="btn btn-sm" onClick={handleFollow}>
               {problem.isFollowing ? "Following ✓" : "Follow for updates"}
             </button>
