@@ -1,6 +1,6 @@
 import { useAuth } from "../context/AuthContext.jsx";
 
-export default function VoteControl({ problem, onVote, size = "md" }) {
+export default function VoteControl({ problem, onVote, size = "md", disabled = false }) {
   const { user } = useAuth();
   const dim = size === "lg" ? 40 : 30;
   const fontSize = size === "lg" ? 26 : 22;
@@ -22,6 +22,8 @@ export default function VoteControl({ problem, onVote, size = "md" }) {
         aria-label="Upvote: I have this problem too"
         aria-pressed={up}
         title="I have this problem too"
+        disabled={disabled}
+        aria-busy={disabled}
         onClick={() => cast(1)}
         style={{
           ...btnStyle(dim),
@@ -39,6 +41,8 @@ export default function VoteControl({ problem, onVote, size = "md" }) {
         aria-label="Downvote: not relevant to me"
         aria-pressed={down}
         title="Not relevant to me"
+        disabled={disabled}
+        aria-busy={disabled}
         onClick={() => cast(-1)}
         style={{
           ...btnStyle(dim),

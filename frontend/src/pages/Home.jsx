@@ -73,7 +73,7 @@ function Hero({ user }) {
   return (
     <section style={s.hero}>
       <div className="wrap" style={{ ...s.heroInner, ...(isMobile ? s.heroInnerMobile : null) }}>
-        <div style={s.heroText}>
+        <div style={{ ...s.heroText, ...(isMobile ? s.heroTextMobile : null) }}>
           <div style={s.eyebrow} className="mono">is there a startup for that?</div>
           <h1 style={{ ...s.h1, ...(isMobile ? s.h1Mobile : null) }}>
             Someone might already be solving your{" "}
@@ -317,8 +317,9 @@ const s = {
   hero: { background: "var(--ink)", padding: "72px 0 88px" },
   heroInner: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center" },
   heroInnerMobile: { gridTemplateColumns: "1fr", gap: 0, padding: "0" },
-  h1Mobile: { fontSize: 34 },
+  h1Mobile: { fontSize: 31, lineHeight: 1.16, maxWidth: 360 },
   heroText: {},
+  heroTextMobile: { width: "100%" },
   eyebrow: { color: "var(--spark)", fontSize: 12.5, letterSpacing: 1.5, marginBottom: 18, textTransform: "uppercase" },
   h1: {
     fontSize: 42,
