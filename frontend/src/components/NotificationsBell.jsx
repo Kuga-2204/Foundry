@@ -46,7 +46,7 @@ export default function NotificationsBell() {
   return (
     <div style={{ position: "relative" }} ref={boxRef}>
       <button aria-label="Notifications" onClick={toggle} style={styles.bell}>
-        ◔
+        <span style={{ fontSize: 18 }}>🔔</span>
         {unread > 0 && (
           <span className="mono" style={styles.count}>{unread > 9 ? "9+" : unread}</span>
         )}
@@ -104,6 +104,7 @@ const styles = {
     right: 0,
     top: 44,
     width: 340,
+    maxWidth: "calc(100vw - 32px)",
     maxHeight: 420,
     overflowY: "auto",
     zIndex: 80,
