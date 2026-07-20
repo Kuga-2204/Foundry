@@ -77,7 +77,7 @@ export default function ResetPassword() {
 
 const styles = {
   wrap: { display: "flex", justifyContent: "center", padding: "64px 20px" },
-  card: { width: 400, padding: 36 },
+  card: { width: 400, maxWidth: "100%", padding: 36 },
   h1: { fontSize: 26, marginBottom: 8 },
   sub: { fontSize: 14, color: "var(--text-dim)", marginBottom: 24, lineHeight: 1.6 },
 };

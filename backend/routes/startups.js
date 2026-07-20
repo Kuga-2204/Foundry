@@ -1,7 +1,7 @@
 import { Router } from "express";
 import db from "../db/index.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import { matchProblemsForStartup } from "../lib/match.js";
+import { matchProblemsForStartup, invalidateStartupDirectory } from "../lib/match.js";
 import { maskAnonymous } from "../lib/anon.js";
 import { moderate } from "../lib/moderate.js";
 import { track, statsFor } from "../lib/track.js";
@@ -19,39 +19,62 @@ function cleanStatements(raw) {
   return cleaned;
 }
 
-async function attachMeta(startup, userId) {
-  const statements = await db
-    .prepare("SELECT id, statement FROM startup_statements WHERE startup_id = ?")
-    .all(startup.id);
+// Same batching reason as the problem list: this used to run four queries per
+// startup, so the directory page cost 4N network round-trips. Now it is two,
+// regardless of how many startups come back.
+async function attachMetaMany(startups, userId) {
+  if (startups.length === 0) return [];
+  const ids = startups.map((s) => s.id);
 
-  const ratings = await db
+  const statementRows = await db
+    .prepare("SELECT id, startup_id, statement FROM startup_statements WHERE startup_id = ANY(?::int[])")
+    .all(ids);
+  const statementsBy = new Map();
+  for (const row of statementRows) {
+    if (!statementsBy.has(row.startup_id)) statementsBy.set(row.startup_id, []);
+    statementsBy.get(row.startup_id).push({ id: row.id, statement: row.statement });
+  }
+
+  const aggRows = await db
     .prepare(
-      `SELECT COUNT(*) AS c, COALESCE(AVG(r.rating), 0) AS avg,
-              COALESCE(SUM(CASE WHEN r.outcome = 'solved' THEN 1 ELSE 0 END), 0) AS solved
-       FROM reviews r JOIN solutions s ON s.id = r.solution_id
-       WHERE s.startup_id = ?`
+      `SELECT st.id,
+              COALESCE(r.c, 0)       AS review_count,
+              COALESCE(r.avg, 0)     AS avg_rating,
+              COALESCE(r.solved, 0)  AS solved_count,
+              COALESCE(sol.c, 0)     AS solution_count,
+              COALESCE(com.c, 0)     AS commitment_count
+         FROM startups st
+         LEFT JOIN (SELECT s.startup_id,
+                           COUNT(*) AS c,
+                           AVG(r.rating) AS avg,
+                           SUM(CASE WHEN r.outcome = 'solved' THEN 1 ELSE 0 END) AS solved
+                      FROM reviews r JOIN solutions s ON s.id = r.solution_id
+                     GROUP BY s.startup_id) r   ON r.startup_id   = st.id
+         LEFT JOIN (SELECT startup_id, COUNT(*) AS c FROM solutions   GROUP BY startup_id) sol ON sol.startup_id = st.id
+         LEFT JOIN (SELECT startup_id, COUNT(*) AS c FROM commitments GROUP BY startup_id) com ON com.startup_id = st.id
+        WHERE st.id = ANY(?::int[])`
     )
-    .get(startup.id);
+    .all(ids);
+  const aggBy = new Map(aggRows.map((a) => [a.id, a]));
 
-  const solutionCount = (await db
-    .prepare("SELECT COUNT(*) AS c FROM solutions WHERE startup_id = ?")
-    .get(startup.id)).c;
+  return startups.map((startup) => {
+    const a = aggBy.get(startup.id) || {};
+    return {
+      ...startup,
+      claimed: !!startup.claimed,
+      isOwner: !!userId && startup.owner_user_id === userId,
+      statements: statementsBy.get(startup.id) || [],
+      solutionCount: a.solution_count || 0,
+      commitmentCount: a.commitment_count || 0,
+      reviewCount: a.review_count || 0,
+      avgRating: Math.round((Number(a.avg_rating) || 0) * 10) / 10,
+      solvedCount: a.solved_count || 0,
+    };
+  });
+}
 
-  const commitmentCount = (await db
-    .prepare("SELECT COUNT(*) AS c FROM commitments WHERE startup_id = ?")
-    .get(startup.id)).c;
-
-  return {
-    ...startup,
-    claimed: !!startup.claimed,
-    isOwner: !!userId && startup.owner_user_id === userId,
-    statements,
-    solutionCount,
-    commitmentCount,
-    reviewCount: ratings.c,
-    avgRating: Math.round(ratings.avg * 10) / 10,
-    solvedCount: ratings.solved,
-  };
+async function attachMeta(startup, userId) {
+  return (await attachMetaMany([startup], userId))[0];
 }
 
 router.get("/", optionalAuth, async (req, res) => {
@@ -70,16 +93,12 @@ router.get("/", optionalAuth, async (req, res) => {
   sql += " ORDER BY claimed DESC, LOWER(name) ASC";
 
   const rows = await db.prepare(sql).all(...params);
-  const startups = [];
-  for (const s of rows) startups.push(await attachMeta(s, req.userId));
-  res.json({ startups });
+  res.json({ startups: await attachMetaMany(rows, req.userId) });
 });
 
 router.get("/mine", requireAuth, async (req, res) => {
   const rows = await db.prepare("SELECT * FROM startups WHERE owner_user_id = ?").all(req.userId);
-  const startups = [];
-  for (const s of rows) startups.push(await attachMeta(s, req.userId));
-  res.json({ startups });
+  res.json({ startups: await attachMetaMany(rows, req.userId) });
 });
 
 router.post("/", requireAuth, async (req, res) => {
@@ -118,6 +137,7 @@ router.post("/", requireAuth, async (req, res) => {
     "INSERT INTO startup_statements (startup_id, statement) VALUES (?, ?)"
   );
   for (const s of cleaned) await insertStatement.run(info.lastInsertRowid, s);
+  invalidateStartupDirectory();
 
   const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(info.lastInsertRowid);
   res.status(201).json({ startup: await attachMeta(row, req.userId) });
@@ -200,6 +220,7 @@ router.put("/:id", requireAuth, async (req, res) => {
     "INSERT INTO startup_statements (startup_id, statement) VALUES (?, ?)"
   );
   for (const s of cleaned) await insertStatement.run(req.params.id, s);
+  invalidateStartupDirectory();
 
   const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   res.json({ startup: await attachMeta(row, req.userId) });
@@ -212,6 +233,7 @@ router.post("/:id/claim", requireAuth, async (req, res) => {
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.claimed) return res.status(409).json({ error: "This startup is already claimed." });
 
+  invalidateStartupDirectory();
   try {
     await db.prepare("UPDATE startups SET owner_user_id = ?, claimed = 1 WHERE id = ?").run(
       req.userId,
@@ -223,6 +245,7 @@ router.post("/:id/claim", requireAuth, async (req, res) => {
       error: "We couldn't claim this startup right now. Please try again in a moment.",
     });
   }
+
 
   const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!row || !row.claimed || row.owner_user_id !== req.userId) {

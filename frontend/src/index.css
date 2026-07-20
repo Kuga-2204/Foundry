@@ -148,6 +148,9 @@ img, video, svg { max-width: 100%; }
   .wrap { padding: 0 16px; }
   .btn { padding: 11px 18px; }
   .btn-sm { padding: 8px 12px; }
+  /* Chunky 36px card padding wastes half a phone's width; tighten it and
+     stop long words (URLs, emails) from forcing horizontal scroll. */
+  .card { overflow-wrap: anywhere; }
 }
 
 @media (prefers-reduced-motion: reduce) {

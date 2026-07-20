@@ -28,62 +28,79 @@ const CATEGORIES = [
   "Developer Tools",
 ];
 
-async function attachMeta(problem, userId) {
-  const votes = await db
+// Attach vote/solution/follower/comment/media counts to a batch of problems.
+//
+// Every count here used to be its own query per problem, which was free on a
+// local SQLite file but is a separate network round-trip to Postgres. A
+// 20-problem page meant ~140 round-trips. This does the whole page in three
+// queries no matter how many problems are on it: one aggregate pass, plus two
+// small lookups for the viewer's own votes and follows.
+async function attachMetaMany(problems, userId) {
+  if (problems.length === 0) return [];
+  const ids = problems.map((p) => p.id);
+
+  const counts = await db
     .prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN vote_type = 1 THEN 1 ELSE 0 END), 0) AS up,
-         COALESCE(SUM(CASE WHEN vote_type = -1 THEN 1 ELSE 0 END), 0) AS down
-       FROM votes WHERE problem_id = ?`
+      `SELECT p.id,
+              COALESCE(v.up, 0)    AS up,
+              COALESCE(v.down, 0)  AS down,
+              COALESCE(s.c, 0)     AS solutions,
+              COALESCE(f.c, 0)     AS followers,
+              COALESCE(cm.c, 0)    AS comments,
+              COALESCE(md.c, 0)    AS media
+         FROM problems p
+         LEFT JOIN (SELECT problem_id,
+                           SUM(CASE WHEN vote_type = 1 THEN 1 ELSE 0 END)  AS up,
+                           SUM(CASE WHEN vote_type = -1 THEN 1 ELSE 0 END) AS down
+                      FROM votes GROUP BY problem_id) v  ON v.problem_id  = p.id
+         LEFT JOIN (SELECT problem_id, COUNT(*) AS c FROM solutions        GROUP BY problem_id) s  ON s.problem_id  = p.id
+         LEFT JOIN (SELECT problem_id, COUNT(*) AS c FROM problem_followers GROUP BY problem_id) f  ON f.problem_id  = p.id
+         LEFT JOIN (SELECT problem_id, COUNT(*) AS c FROM comments          GROUP BY problem_id) cm ON cm.problem_id = p.id
+         LEFT JOIN (SELECT problem_id, COUNT(*) AS c FROM problem_media     GROUP BY problem_id) md ON md.problem_id = p.id
+        WHERE p.id = ANY(?::int[])`
     )
-    .get(problem.id);
+    .all(ids);
 
-  const solutionCount = (await db
-    .prepare("SELECT COUNT(*) AS c FROM solutions WHERE problem_id = ?")
-    .get(problem.id)).c;
+  const byId = new Map(counts.map((c) => [c.id, c]));
 
-  const followerCount = (await db
-    .prepare("SELECT COUNT(*) AS c FROM problem_followers WHERE problem_id = ?")
-    .get(problem.id)).c;
-
-  const commentCount = (await db
-    .prepare("SELECT COUNT(*) AS c FROM comments WHERE problem_id = ?")
-    .get(problem.id)).c;
-
-  const mediaCount = (await db
-    .prepare("SELECT COUNT(*) AS c FROM problem_media WHERE problem_id = ?")
-    .get(problem.id)).c;
-
-  let myVote = null;
-  let hasStake = false;
-  let isFollowing = false;
+  let myVotes = new Map();
+  let myFollows = new Set();
   if (userId) {
-    const v = await db
-      .prepare("SELECT vote_type FROM votes WHERE problem_id = ? AND user_id = ?")
-      .get(problem.id, userId);
-    myVote = v ? v.vote_type : null;
-    hasStake = myVote !== null || problem.user_id === userId;
-    isFollowing = !!(await db
-      .prepare("SELECT id FROM problem_followers WHERE problem_id = ? AND user_id = ?")
-      .get(problem.id, userId));
+    const votes = await db
+      .prepare("SELECT problem_id, vote_type FROM votes WHERE user_id = ? AND problem_id = ANY(?::int[])")
+      .all(userId, ids);
+    myVotes = new Map(votes.map((v) => [v.problem_id, v.vote_type]));
+
+    const follows = await db
+      .prepare("SELECT problem_id FROM problem_followers WHERE user_id = ? AND problem_id = ANY(?::int[])")
+      .all(userId, ids);
+    myFollows = new Set(follows.map((f) => f.problem_id));
   }
 
-  return {
-    ...problem,
-    upvotes: votes.up,
-    downvotes: votes.down,
-    // Demand is the number of people who say they have the problem. A downvote
-    // is useful feedback, but must never turn one person's demand into -1.
-    score: votes.up,
-    solutionCount,
-    followerCount,
-    commentCount,
-    mediaCount,
-    myVote,
-    hasStake, // eligible to review solutions
-    isFollowing,
-    isMine: !!userId && problem.user_id === userId,
-  };
+  return problems.map((problem) => {
+    const c = byId.get(problem.id) || {};
+    const myVote = userId ? myVotes.get(problem.id) ?? null : null;
+    return {
+      ...problem,
+      upvotes: c.up || 0,
+      downvotes: c.down || 0,
+      // Demand is the number of people who say they have the problem. A downvote
+      // is useful feedback, but must never turn one person's demand into -1.
+      score: c.up || 0,
+      solutionCount: c.solutions || 0,
+      followerCount: c.followers || 0,
+      commentCount: c.comments || 0,
+      mediaCount: c.media || 0,
+      myVote,
+      hasStake: !!userId && (myVote !== null || problem.user_id === userId),
+      isFollowing: myFollows.has(problem.id),
+      isMine: !!userId && problem.user_id === userId,
+    };
+  });
+}
+
+async function attachMeta(problem, userId) {
+  return (await attachMetaMany([problem], userId))[0];
 }
 
 async function getFullProblem(id, userId) {
@@ -157,10 +174,9 @@ router.get("/", optionalAuth, async (req, res) => {
   }
 
   const rows = await db.prepare(sql).all(...params);
-  let withMeta = [];
-  for (const r of rows) {
-    withMeta.push(maskAnonymous(await attachMeta(r, req.userId), req.userId));
-  }
+  let withMeta = (await attachMetaMany(rows, req.userId)).map((p) =>
+    maskAnonymous(p, req.userId)
+  );
 
   // Trending: recent activity beats stale popularity. Engagement (votes,
   // followers, comments, solutions) decays with age so last week's hot
@@ -192,10 +208,9 @@ router.post("/similar", optionalAuth, async (req, res) => {
   const { text } = req.body;
   if (!text || String(text).trim().length < 8) return res.json({ similar: [] });
   const matches = await matchSimilarProblems(String(text));
-  const similar = [];
-  for (const m of matches) {
-    similar.push(maskAnonymous(await attachMeta(m.problem, req.userId), req.userId));
-  }
+  const similar = (await attachMetaMany(matches.map((m) => m.problem), req.userId)).map((p) =>
+    maskAnonymous(p, req.userId)
+  );
   res.json({
     similar,
   });

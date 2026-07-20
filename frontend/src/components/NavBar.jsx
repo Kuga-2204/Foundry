@@ -30,7 +30,7 @@ export default function NavBar() {
           {user && <Link to="/dashboard" style={styles.link}>Dashboard</Link>}
         </nav>
 
-        <div style={styles.right}>
+        <div style={{ ...styles.right, ...(isMobile ? styles.rightMobile : null) }}>
           {user ? (
             <>
               <NotificationsBell />
@@ -39,6 +39,7 @@ export default function NavBar() {
               )}
               <button
                 className="btn btn-sm"
+                style={{ height: 36 }}
                 onClick={() => {
                   logout();
                   navigate("/");
@@ -49,8 +50,8 @@ export default function NavBar() {
             </>
           ) : (
             <>
-              <Link to="/login" className="btn btn-sm">Log in</Link>
-              <Link to="/register" className="btn btn-sm btn-primary">Sign up</Link>
+              <Link to="/login" className="btn btn-sm" style={{ height: 36 }}>Log in</Link>
+              <Link to="/register" className="btn btn-sm btn-primary" style={{ height: 36 }}>Sign up</Link>
             </>
           )}
         </div>
@@ -71,40 +72,46 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    height: 68,
-    gap: 24,
+    height: 72,
+    gap: 20,
   },
   innerMobile: {
-    flexWrap: "wrap",
+    flexDirection: "column",
     height: "auto",
-    paddingTop: 12,
-    paddingBottom: 12,
-    rowGap: 10,
-    columnGap: 12,
+    paddingTop: 16,
+    paddingBottom: 4,
+    gap: 12,
   },
   navMobile: {
     order: 3,
     width: "100%",
     marginLeft: 0,
-    gap: 18,
-    overflowX: "auto",
+    gap: 0,
     flex: "none",
+    borderTop: "1.5px solid var(--line)",
+    justifyContent: "space-around",
+    padding: "0",
   },
   logo: {
     fontFamily: "var(--display)",
     fontWeight: 700,
-    fontSize: 21,
+    fontSize: 22,
     letterSpacing: "-0.02em",
     flexShrink: 0,
     color: "var(--ink)",
     display: "inline-flex",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
-  logoMark: { height: 30, width: "auto", display: "block" },
+  logoMark: { height: 32, width: "auto", display: "block" },
   logoAccent: { color: "var(--spark)" },
-  nav: { display: "flex", gap: 22, flex: 1, marginLeft: 12 },
-  link: { fontSize: 14.5, fontWeight: 500, color: "var(--text-dim)" },
-  right: { display: "flex", alignItems: "center", gap: 12, flexShrink: 0 },
+  nav: { display: "flex", gap: 24, flex: 1, marginLeft: 16 },
+  link: { fontSize: 14.5, fontWeight: 500, color: "var(--text-dim)", padding: "12px 0" },
+  right: { display: "flex", alignItems: "center", gap: 14, flexShrink: 0 },
+  rightMobile: {
+    position: "absolute",
+    right: 28,
+    top: 16,
+  },
   hello: { fontSize: 13, color: "var(--text-dim)" },
 };
