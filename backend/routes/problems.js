@@ -328,21 +328,26 @@ router.post("/:id/vote", requireAuth, async (req, res) => {
   const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
 
-  const existing = await db
-    .prepare("SELECT * FROM votes WHERE problem_id = ? AND user_id = ?")
-    .get(req.params.id, req.userId);
-
-  if (existing && existing.vote_type === type) {
-    await db.prepare("DELETE FROM votes WHERE id = ?").run(existing.id);
-  } else if (existing) {
-    await db.prepare("UPDATE votes SET vote_type = ? WHERE id = ?").run(type, existing.id);
-  } else {
-    await db.prepare("INSERT INTO votes (problem_id, user_id, vote_type) VALUES (?, ?, ?)").run(
-      req.params.id,
-      req.userId,
-      type
-    );
-  }
+  await db
+    .prepare(
+      `WITH deleted AS (
+         DELETE FROM votes
+         WHERE problem_id = ? AND user_id = ? AND vote_type = ?
+         RETURNING id
+       ),
+       upserted AS (
+         INSERT INTO votes (problem_id, user_id, vote_type)
+         SELECT ?, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM deleted)
+         ON CONFLICT (problem_id, user_id)
+         DO UPDATE SET vote_type = EXCLUDED.vote_type
+         RETURNING id
+       )
+       SELECT
+         (SELECT COUNT(*) FROM deleted) AS deleted,
+         (SELECT COUNT(*) FROM upserted) AS upserted`
+    )
+    .get(req.params.id, req.userId, type, req.params.id, req.userId, type);
   // Only "me too" (upvote) means you're waiting on a fix, so only that
   // follows the problem. Downvoting ("not relevant") must not subscribe you.
   if (type === 1) await follow(req.params.id, req.userId);

@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import ProblemCard from "../components/ProblemCard.jsx";
 import WelcomeBanner from "../components/WelcomeBanner.jsx";
+import { optimisticVote } from "../voteUtils.js";
 
 export default function Problems() {
   const { token } = useAuth();
@@ -13,6 +14,7 @@ export default function Problems() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState(searchParams.get("search") || "");
+  const [votingIds, setVotingIds] = useState(() => new Set());
 
   const sort = searchParams.get("sort") || "trending";
   const category = searchParams.get("category") || "All";
@@ -62,11 +64,23 @@ export default function Problems() {
       setError("Log in to vote on a problem.");
       return;
     }
+    if (votingIds.has(id)) return;
+    const previous = problems;
+    setError("");
+    setVotingIds((prev) => new Set(prev).add(id));
+    setProblems((prev) => prev.map((p) => (p.id === id ? optimisticVote(p, type) : p)));
     try {
       const data = await api.vote(id, type, token);
       setProblems((prev) => prev.map((p) => (p.id === id ? data.problem : p)));
     } catch (err) {
+      setProblems(previous);
       setError(err.message);
+    } finally {
+      setVotingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -134,7 +148,14 @@ export default function Problems() {
           </p>
         </div>
       ) : (
-        problems.map((p) => <ProblemCard key={p.id} problem={p} onVote={handleVote} />)
+        problems.map((p) => (
+          <ProblemCard
+            key={p.id}
+            problem={p}
+            onVote={handleVote}
+            voting={votingIds.has(p.id)}
+          />
+        ))
       )}
     </div>
   );

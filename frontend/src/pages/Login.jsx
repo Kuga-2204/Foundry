@@ -65,7 +65,10 @@ export default function Login() {
         </form>
 
         <p style={styles.footer}>
-          New here? <Link to="/register" style={{ fontWeight: 600 }}>Create an account</Link>
+          New here?{" "}
+          <Link to={`/register?next=${encodeURIComponent(dest)}`} style={{ fontWeight: 600 }}>
+            Create an account
+          </Link>
         </p>
       </div>
     </div>

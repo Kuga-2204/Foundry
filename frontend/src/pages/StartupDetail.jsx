@@ -38,7 +38,7 @@ export default function StartupDetail() {
   }, [load]);
 
   const claim = async () => {
-    if (!user) {
+    if (!user || !token) {
       navigate("/login", { state: { from: `/startups/${id}` } });
       return;
     }
@@ -48,7 +48,11 @@ export default function StartupDetail() {
       await api.claimStartup(id, token);
       await load();
     } catch (err) {
-      setError(err.message);
+      setError(
+        err.message === "Something went wrong. Please try again."
+          ? "We couldn't claim this startup right now. Please try again in a moment."
+          : err.message
+      );
     } finally {
       setClaiming(false);
     }

@@ -127,8 +127,13 @@ router.get("/:id", optionalAuth, async (req, res) => {
   const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
   if (!row) return res.status(404).json({ error: "Startup not found." });
 
-  // Analytics: profile visit, unless the owner is checking their own page.
-  if (row.owner_user_id !== req.userId) await track("profile_view", row.id, req.userId);
+  // Analytics must never block a profile view. If tracking has a transient
+  // database issue, the startup page should still load normally.
+  if (row.owner_user_id !== req.userId) {
+    track("profile_view", row.id, req.userId).catch((err) =>
+      console.warn("profile_view tracking failed", err)
+    );
+  }
 
   const solutions = (await db
     .prepare(
@@ -207,11 +212,22 @@ router.post("/:id/claim", requireAuth, async (req, res) => {
   if (!startup) return res.status(404).json({ error: "Startup not found." });
   if (startup.claimed) return res.status(409).json({ error: "This startup is already claimed." });
 
-  await db.prepare("UPDATE startups SET owner_user_id = ?, claimed = 1 WHERE id = ?").run(
-    req.userId,
-    req.params.id
-  );
+  try {
+    await db.prepare("UPDATE startups SET owner_user_id = ?, claimed = 1 WHERE id = ?").run(
+      req.userId,
+      req.params.id
+    );
+  } catch (err) {
+    console.error("startup claim failed:", err.message);
+    return res.status(500).json({
+      error: "We couldn't claim this startup right now. Please try again in a moment.",
+    });
+  }
+
   const row = await db.prepare("SELECT * FROM startups WHERE id = ?").get(req.params.id);
+  if (!row || !row.claimed || row.owner_user_id !== req.userId) {
+    return res.status(409).json({ error: "This startup could not be claimed. Refresh and try again." });
+  }
   res.json({ startup: await attachMeta(row, req.userId) });
 });
 

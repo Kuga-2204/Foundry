@@ -9,6 +9,7 @@ import ShareButton from "../components/ShareButton.jsx";
 import ReportButton from "../components/ReportButton.jsx";
 import { StarsDisplay, StarsInput } from "../components/Stars.jsx";
 import { formatDate, OUTCOME_LABELS, OUTCOME_COLORS } from "../utils.js";
+import { optimisticVote } from "../voteUtils.js";
 
 export default function ProblemDetail() {
   const { id } = useParams();
@@ -23,6 +24,7 @@ export default function ProblemDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showSolutionForm, setShowSolutionForm] = useState(false);
+  const [voting, setVoting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,12 +70,24 @@ export default function ProblemDetail() {
       setError("Log in to vote on this problem.");
       return;
     }
+    if (voting) return;
+    const previousProblem = problem;
+    const previousCanReview = canReview;
+    setError("");
+    setVoting(true);
+    const optimistic = optimisticVote(problem, type);
+    setProblem(optimistic);
+    setCanReview(!!optimistic.hasStake);
     try {
       const data = await api.vote(id, type, token);
       setProblem(data.problem);
       await refreshStake();
     } catch (err) {
+      setProblem(previousProblem);
+      setCanReview(previousCanReview);
       setError(err.message);
+    } finally {
+      setVoting(false);
     }
   };
 
@@ -112,7 +126,7 @@ export default function ProblemDetail() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card" style={styles.problemCard}>
-        <VoteControl problem={problem} onVote={handleVote} size="lg" />
+        <VoteControl problem={problem} onVote={handleVote} size="lg" disabled={voting} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.badgeRow}>
             <span style={styles.category}>{problem.category}</span>

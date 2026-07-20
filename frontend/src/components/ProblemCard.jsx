@@ -3,10 +3,14 @@ import VoteControl from "./VoteControl.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { formatDate } from "../utils.js";
 
-export default function ProblemCard({ problem, onVote }) {
+export default function ProblemCard({ problem, onVote, voting = false }) {
   return (
     <div className="card" style={styles.card}>
-      <VoteControl problem={problem} onVote={(type, reason) => onVote(problem.id, type, reason)} />
+      <VoteControl
+        problem={problem}
+        onVote={(type, reason) => onVote(problem.id, type, reason)}
+        disabled={voting}
+      />
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={styles.metaRow}>
