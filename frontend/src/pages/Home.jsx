@@ -71,7 +71,7 @@ function TrendingStrip() {
 function Hero({ user }) {
   const isMobile = useMediaQuery("(max-width: 860px)");
   return (
-    <section style={s.hero}>
+    <section style={{ ...s.hero, ...(isMobile ? s.heroMobile : null) }}>
       <div className="wrap" style={{ ...s.heroInner, ...(isMobile ? s.heroInnerMobile : null) }}>
         <div style={{ ...s.heroText, ...(isMobile ? s.heroTextMobile : null) }}>
           <div style={s.eyebrow} className="mono">is there a startup for that?</div>
@@ -315,8 +315,11 @@ function Footer() {
 
 const s = {
   hero: { background: "var(--ink)", padding: "72px 0 88px" },
+  heroMobile: { padding: "44px 0 56px" },
   heroInner: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center" },
-  heroInnerMobile: { gridTemplateColumns: "1fr", gap: 0, padding: "0" },
+  // Note: no `padding: 0` here — that would override the .wrap class's mobile
+  // padding and let the text run into the screen edges.
+  heroInnerMobile: { gridTemplateColumns: "1fr", gap: 0 },
   h1Mobile: { fontSize: 31, lineHeight: 1.16, maxWidth: 360 },
   heroText: {},
   heroTextMobile: { width: "100%" },

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import VoteControl from "../components/VoteControl.jsx";
@@ -13,7 +13,9 @@ import { optimisticVote } from "../voteUtils.js";
 
 export default function ProblemDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user, token } = useAuth();
+  const [deleting, setDeleting] = useState(false);
 
   const [problem, setProblem] = useState(null);
   const [commitments, setCommitments] = useState([]);
@@ -104,6 +106,20 @@ export default function ProblemDetail() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this problem for good? Its votes, comments, and solutions go with it. This can't be undone.")) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api.deleteProblem(id, token);
+      navigate("/problems");
+    } catch (err) {
+      setError(err.message);
+      setDeleting(false);
+    }
+  };
+
   const reloadProblem = async () => {
     const probData = await api.getProblem(id, token);
     setProblem(probData.problem);
@@ -151,6 +167,16 @@ export default function ProblemDetail() {
               {problem.isFollowing ? "Following ✓" : "Follow for updates"}
             </button>
             <ShareButton problem={problem} />
+            {problem.isMine && (
+              <button
+                className="btn btn-sm"
+                onClick={handleDelete}
+                disabled={deleting}
+                style={styles.deleteBtn}
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            )}
             <span style={{ marginLeft: "auto", alignSelf: "center" }}>
               <ReportButton targetType="problem" targetId={problem.id} />
             </span>
@@ -767,6 +793,7 @@ const styles = {
   meta: { fontSize: 13, color: "var(--text-dim)", marginBottom: 16 },
   desc: { fontSize: 15.5, lineHeight: 1.6, color: "var(--text)" },
   problemActions: { marginTop: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
+  deleteBtn: { borderColor: "var(--signal)", color: "var(--signal)" },
   commitmentsBox: {
     border: "1.5px solid var(--build)", borderRadius: 4, padding: "14px 18px",
     marginBottom: 24, background: "#fff",

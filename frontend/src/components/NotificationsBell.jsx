@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useMediaQuery } from "../hooks/useMediaQuery.js";
 
 export default function NotificationsBell() {
   const { token } = useAuth();
+  const isMobile = useMediaQuery("(max-width: 760px)");
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -53,7 +55,7 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div className="card" style={styles.dropdown}>
+        <div className="card" style={{ ...styles.dropdown, ...(isMobile ? styles.dropdownMobile : null) }}>
           <div style={styles.dropdownHeader}>
             <strong style={{ fontSize: 13.5 }}>Notifications</strong>
           </div>
@@ -109,6 +111,17 @@ const styles = {
     overflowY: "auto",
     zIndex: 80,
     boxShadow: "0 8px 24px rgba(15,22,38,0.14)",
+  },
+  // On phones, anchor to the viewport (fixed) with equal side margins so the
+  // panel can never spill off either edge regardless of the bell's position.
+  dropdownMobile: {
+    position: "fixed",
+    top: 60,
+    left: 12,
+    right: 12,
+    width: "auto",
+    maxWidth: "none",
+    maxHeight: "70vh",
   },
   dropdownHeader: { padding: "12px 16px", borderBottom: "1px solid var(--line)" },
   empty: { padding: 16, fontSize: 13, color: "var(--text-dim)", lineHeight: 1.5 },

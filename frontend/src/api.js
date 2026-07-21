@@ -37,6 +37,7 @@ export const api = {
   },
   getProblem: (id, token) => request(`/problems/${id}`, { token }),
   createProblem: (payload, token) => request("/problems", { method: "POST", body: payload, token }),
+  deleteProblem: (id, token) => request(`/problems/${id}`, { method: "DELETE", token }),
   vote: (id, type, token) => request(`/problems/${id}/vote`, { method: "POST", body: { type }, token }),
   followProblem: (id, token) => request(`/problems/${id}/follow`, { method: "POST", token }),
   // Token is optional but sent when present: it lets the backend credit the
