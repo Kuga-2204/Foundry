@@ -161,6 +161,13 @@ export default function ProblemDetail() {
             · {formatDate(problem.created_at)} · {problem.followerCount} following
           </p>
           <p style={styles.desc}>{problem.description}</p>
+          {problem.trendScore > 10 && (
+            <div style={{ marginTop: 12 }}>
+              <span style={{ ...styles.category, background: "var(--spark-soft)", color: "var(--ink)", fontWeight: 700 }}>
+                🔥 This problem is trending on Solvyard right now
+              </span>
+            </div>
+          )}
           {problem.media?.length > 0 && <MediaGallery media={problem.media} />}
           <div style={styles.problemActions}>
             <button className="btn btn-sm" onClick={handleFollow}>
