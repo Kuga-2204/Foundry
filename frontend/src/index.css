@@ -32,6 +32,13 @@
 
 html, body, #root { height: 100%; }
 
+/* Safety net: nothing may cause a horizontal scrollbar. Even if one element
+   is momentarily too wide, the page itself never scrolls sideways on a phone. */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   background: var(--paper);

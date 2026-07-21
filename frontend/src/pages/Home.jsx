@@ -71,24 +71,34 @@ function TrendingStrip() {
 function Hero({ user }) {
   const isMobile = useMediaQuery("(max-width: 860px)");
   return (
-    <section style={s.hero}>
+    <section style={{ ...s.hero, ...(isMobile ? s.heroMobile : null) }}>
       <div className="wrap" style={{ ...s.heroInner, ...(isMobile ? s.heroInnerMobile : null) }}>
         <div style={{ ...s.heroText, ...(isMobile ? s.heroTextMobile : null) }}>
-          <div style={s.eyebrow} className="mono">is there a startup for that?</div>
+          <div style={{ ...s.eyebrow, ...(isMobile ? s.eyebrowMobile : null) }} className="mono">
+            is there a startup for that?
+          </div>
           <h1 style={{ ...s.h1, ...(isMobile ? s.h1Mobile : null) }}>
             Someone might already be solving your{" "}
             <span style={{ color: "var(--spark)" }}>problem.</span>
           </h1>
-          <p style={s.sub}>
+          <p style={{ ...s.sub, ...(isMobile ? s.subMobile : null) }}>
             Describe a problem from your daily life and Solvyard matches you with startups
             already solving it. Nothing out there yet? List it, and you'll be the first to
             know when a startup commits to a fix.
           </p>
-          <div style={s.ctaRow}>
-            <Link to={user ? "/post" : "/register"} className="btn btn-spark">
+          <div style={{ ...s.ctaRow, ...(isMobile ? s.ctaRowMobile : null) }}>
+            <Link
+              to={user ? "/post" : "/register"}
+              className="btn btn-spark"
+              style={isMobile ? s.ctaBtnMobile : null}
+            >
               Describe your problem →
             </Link>
-            <Link to="/startups" className="btn btn-ghost-dark">
+            <Link
+              to="/startups"
+              className="btn btn-ghost-dark"
+              style={isMobile ? s.ctaBtnMobile : null}
+            >
               Browse startups
             </Link>
           </div>
@@ -315,12 +325,16 @@ function Footer() {
 
 const s = {
   hero: { background: "var(--ink)", padding: "72px 0 88px" },
+  heroMobile: { padding: "40px 0 48px" },
   heroInner: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center" },
-  heroInnerMobile: { gridTemplateColumns: "1fr", gap: 0, padding: "0" },
-  h1Mobile: { fontSize: 31, lineHeight: 1.16, maxWidth: 360 },
+  // Note: no `padding: 0` here — that would override the .wrap class's mobile
+  // padding and let the text run into the screen edges.
+  heroInnerMobile: { gridTemplateColumns: "1fr", gap: 0 },
+  h1Mobile: { fontSize: 30, lineHeight: 1.2, maxWidth: "100%", marginBottom: 16 },
   heroText: {},
   heroTextMobile: { width: "100%" },
   eyebrow: { color: "var(--spark)", fontSize: 12.5, letterSpacing: 1.5, marginBottom: 18, textTransform: "uppercase" },
+  eyebrowMobile: { fontSize: 11.5, letterSpacing: 1.2, marginBottom: 14 },
   h1: {
     fontSize: 42,
     lineHeight: 1.14,
@@ -332,6 +346,9 @@ const s = {
     maxWidth: 520,
   },
   sub: { fontSize: 16.5, lineHeight: 1.6, color: "var(--text-on-dark-dim)", maxWidth: 460, marginBottom: 32 },
+  subMobile: { fontSize: 15, lineHeight: 1.6, marginBottom: 26 },
+  ctaRowMobile: { flexDirection: "column", gap: 10, width: "100%" },
+  ctaBtnMobile: { width: "100%", textAlign: "center", justifyContent: "center" },
   ctaRow: { display: "flex", gap: 14, flexWrap: "wrap" },
   schematic: { width: "100%", height: "auto", border: "1px solid var(--line-on-dark)", borderRadius: 4 },
 

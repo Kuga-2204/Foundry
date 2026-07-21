@@ -320,6 +320,19 @@ router.get("/:id", optionalAuth, async (req, res) => {
   res.json({ problem, commitments });
 });
 
+// Delete a problem. Only the person who posted it can remove it. Votes,
+// followers, comments, solutions, and media rows are removed by the ON DELETE
+// CASCADE foreign keys, so a single delete cleans up the whole thread.
+router.delete("/:id", requireAuth, async (req, res) => {
+  const problem = await db.prepare("SELECT user_id FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+  if (problem.user_id !== req.userId) {
+    return res.status(403).json({ error: "You can only delete a problem you posted." });
+  }
+  await db.prepare("DELETE FROM problems WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 // Startups that likely already solve this problem.
 router.get("/:id/matches", async (req, res) => {
   const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);

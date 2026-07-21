@@ -30,7 +30,7 @@ export default function NavBar() {
           {user && <Link to="/dashboard" style={styles.link}>Dashboard</Link>}
         </nav>
 
-        <div style={{ ...styles.right, ...(isMobile ? styles.rightMobile : null) }}>
+        <div style={styles.right}>
           {user ? (
             <>
               <NotificationsBell />
@@ -76,11 +76,12 @@ const styles = {
     gap: 20,
   },
   innerMobile: {
-    flexDirection: "column",
+    flexWrap: "wrap",
     height: "auto",
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 4,
-    gap: 12,
+    rowGap: 10,
+    columnGap: 12,
   },
   navMobile: {
     order: 3,
@@ -90,7 +91,8 @@ const styles = {
     flex: "none",
     borderTop: "1.5px solid var(--line)",
     justifyContent: "space-around",
-    padding: "0",
+    marginTop: 4,
+    paddingTop: 2,
   },
   logo: {
     fontFamily: "var(--display)",
@@ -107,11 +109,6 @@ const styles = {
   logoAccent: { color: "var(--spark)" },
   nav: { display: "flex", gap: 24, flex: 1, marginLeft: 16 },
   link: { fontSize: 14.5, fontWeight: 500, color: "var(--text-dim)", padding: "12px 0" },
-  right: { display: "flex", alignItems: "center", gap: 14, flexShrink: 0 },
-  rightMobile: {
-    position: "absolute",
-    right: 28,
-    top: 16,
-  },
+  right: { display: "flex", alignItems: "center", gap: 10, flexShrink: 0 },
   hello: { fontSize: 13, color: "var(--text-dim)" },
 };

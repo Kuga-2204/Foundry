@@ -37,8 +37,19 @@ export default function PostProblem() {
   const [checked, setChecked] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
   const debounceRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const clearDraft = () => {
+    localStorage.removeItem(DRAFT_KEY);
+    setForm({ title: "", description: "", category: "General" });
+    setAnonymous(false);
+    setAnonymousHandle("");
+    setDraftRestored(false);
+    setSavedAt(null);
+  };
 
   useEffect(() => {
     api.categories().then((d) => setCategories(d.categories));
@@ -57,6 +68,7 @@ export default function PostProblem() {
         setAnonymous(!!saved.anonymous);
         setAnonymousHandle(saved.anonymousHandle || "");
         if (saved.title || saved.category !== "General" || saved.anonymous) setShowDetails(true);
+        setDraftRestored(true);
       }
     } catch {
       /* ignore malformed draft */
@@ -68,6 +80,7 @@ export default function PostProblem() {
     const hasContent = form.title.trim() || form.description.trim();
     if (hasContent) {
       localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...form, anonymous, anonymousHandle }));
+      setSavedAt(Date.now());
     }
   }, [form, anonymous, anonymousHandle]);
 
@@ -199,6 +212,13 @@ export default function PostProblem() {
           </p>
 
           {error && <div className="error-banner">{error}</div>}
+
+          {draftRestored && (
+            <div style={styles.draftBanner}>
+              <span>We kept the draft you started earlier.</span>
+              <button type="button" onClick={clearDraft} style={styles.draftClear}>Start fresh</button>
+            </div>
+          )}
 
           <form onSubmit={submit}>
             <div className="field">
@@ -340,6 +360,9 @@ export default function PostProblem() {
                 draft is saved.
               </p>
             )}
+            {savedAt && (
+              <p style={styles.savedNote}>✓ Draft saved automatically. It'll be here if you come back.</p>
+            )}
           </form>
         </div>
 
@@ -433,6 +456,16 @@ const styles = {
   detailsBox: { marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line)" },
   optional: { fontWeight: 400, fontSize: 12, color: "var(--text-dim)" },
   authNote: { fontSize: 12.5, color: "var(--text-dim)", textAlign: "center", marginTop: 10, lineHeight: 1.45 },
+  savedNote: { fontSize: 12, color: "var(--build)", textAlign: "center", marginTop: 8 },
+  draftBanner: {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    background: "var(--paper-dim)", border: "1.5px solid var(--line)", borderRadius: 4,
+    padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "var(--text)",
+  },
+  draftClear: {
+    background: "none", border: "none", padding: 0, cursor: "pointer",
+    fontSize: 13, fontWeight: 600, color: "var(--signal)", fontFamily: "inherit", flexShrink: 0,
+  },
   previewRow: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 },
   previewThumb: {
     position: "relative", width: 92, height: 92, borderRadius: 3,
