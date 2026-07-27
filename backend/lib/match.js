@@ -116,7 +116,9 @@ export async function matchSimilarProblems(text, { limit = 4, excludeId = null }
   if (tokens.length < 2) return [];
 
   const problems = await db
-    .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
+    .prepare(
+      "SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id WHERE p.hidden = 0"
+    )
     .all();
 
   const scored = [];
@@ -160,7 +162,9 @@ export async function matchProblemsForStartup(startupId, { limit = 25 } = {}) {
   const index = startupIndex(startup, statements);
 
   const problems = await db
-    .prepare("SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id")
+    .prepare(
+      "SELECT p.*, u.name AS author_name, u.anon_handle FROM problems p JOIN users u ON u.id = p.user_id WHERE p.hidden = 0"
+    )
     .all();
 
   const scored = [];

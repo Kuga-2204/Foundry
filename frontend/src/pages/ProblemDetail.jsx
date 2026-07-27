@@ -148,6 +148,11 @@ export default function ProblemDetail() {
             <span style={styles.category}>{problem.category}</span>
             <StatusBadge status={problem.status} size="md" />
           </div>
+          {problem.isHidden && (
+            <div className="error-banner" style={{ marginBottom: 14 }}>
+              This post is hidden from other users pending review after being reported multiple times. Only you can see it right now.
+            </div>
+          )}
           <h1 style={styles.title}>{problem.title}</h1>
           <p style={styles.meta}>
             Posted by{" "}

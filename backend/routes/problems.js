@@ -111,10 +111,14 @@ async function getFullProblem(id, userId) {
     )
     .get(id);
   if (!row) return null;
+  // Hidden content stays visible only to the person who posted it, with a
+  // pending-review flag; everyone else gets a plain 404 upstream.
+  if (row.hidden && row.user_id !== userId) return null;
   const meta = await attachMeta(row, userId);
   meta.media = await db
     .prepare("SELECT id, file, kind FROM problem_media WHERE problem_id = ? ORDER BY id")
     .all(id);
+  if (row.hidden) meta.isHidden = true;
   return maskAnonymous(meta, userId);
 }
 
@@ -152,9 +156,9 @@ router.get("/", optionalAuth, async (req, res) => {
   let sql = `
     SELECT p.*, u.name AS author_name, u.anon_handle
     FROM problems p JOIN users u ON u.id = p.user_id
-    WHERE 1=1
+    WHERE (p.hidden = 0 OR p.user_id = ?)
   `;
-  const params = [];
+  const params = [req.userId || -1];
 
   if (category && category !== "All") {
     sql += " AND p.category = ?";
@@ -482,9 +486,10 @@ router.get("/:id/comments", optionalAuth, async (req, res) => {
        FROM comments c
        JOIN users u ON u.id = c.user_id
        LEFT JOIN startups s ON s.id = c.startup_id
-       WHERE c.problem_id = ? ORDER BY c.created_at ASC, c.id ASC`
+       WHERE c.problem_id = ? AND (c.hidden = 0 OR c.user_id = ?)
+       ORDER BY c.created_at ASC, c.id ASC`
     )
-    .all(req.params.id);
+    .all(req.params.id, req.userId || -1);
 
   res.json({
     comments: rows.map((r) => ({

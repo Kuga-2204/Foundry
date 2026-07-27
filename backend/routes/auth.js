@@ -59,6 +59,9 @@ router.post("/login", async (req, res) => {
   if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Incorrect email or password." });
   }
+  if (user.banned) {
+    return res.status(403).json({ error: "Your account has been permanently banned." });
+  }
   res.json({ token: signToken(user.id), user: publicUser(user) });
 });
 
