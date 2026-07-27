@@ -11,9 +11,9 @@ export default function ShareButton({ problem, size = "sm" }) {
   const ref = useRef(null);
 
   const url = `${window.location.origin}/problems/${problem.id}`;
-  const text = `"${problem.title}" — is there a startup solving this? Weigh in on Solvyard:`;
+  const text = `"${problem.title}": is there a startup solving this? Weigh in on Solvyard:`;
   // Invite framing: aimed at someone who shares the pain, to recruit a vote.
-  const inviteText = `Do you have this problem too? "${problem.title}" — add your vote on Solvyard so startups see the demand:`;
+  const inviteText = `Do you have this problem too? "${problem.title}": add your vote on Solvyard so startups see the demand:`;
 
   // Close the fallback menu on outside click or Escape.
   useEffect(() => {

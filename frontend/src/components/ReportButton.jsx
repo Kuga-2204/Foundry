@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import { useAuth } from "../context/AuthContext.jsx";
 
 // Lightweight flag control. Write-time moderation only catches profanity;
 // this lets anyone surface anything else for a human to look at. Deliberately
@@ -7,6 +8,7 @@ import { api } from "../api.js";
 const REASONS = ["Spam or ad", "Offensive or abusive", "Off-topic", "Something else"];
 
 export default function ReportButton({ targetType, targetId }) {
+  const { token } = useAuth();
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState(false);
   const ref = useRef(null);
@@ -26,7 +28,7 @@ export default function ReportButton({ targetType, targetId }) {
   const report = async (reason) => {
     setOpen(false);
     try {
-      await api.report(targetType, targetId, reason);
+      await api.report(targetType, targetId, reason, token);
       setDone(true);
       setTimeout(() => setDone(false), 2500);
     } catch {
@@ -34,7 +36,7 @@ export default function ReportButton({ targetType, targetId }) {
     }
   };
 
-  if (done) return <span style={styles.done}>Flagged — thanks</span>;
+  if (done) return <span style={styles.done}>Flagged, thanks</span>;
 
   return (
     <span style={styles.wrap} ref={ref}>

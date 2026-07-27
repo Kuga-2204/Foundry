@@ -7,6 +7,7 @@ import StatusBadge from "../components/StatusBadge.jsx";
 import StartupCard from "../components/StartupCard.jsx";
 import ShareButton from "../components/ShareButton.jsx";
 import ReportButton from "../components/ReportButton.jsx";
+import PostMenu from "../components/PostMenu.jsx";
 import { StarsDisplay, StarsInput } from "../components/Stars.jsx";
 import { formatDate, OUTCOME_LABELS, OUTCOME_COLORS } from "../utils.js";
 import { optimisticVote } from "../voteUtils.js";
@@ -16,6 +17,9 @@ export default function ProblemDetail() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const [deleting, setDeleting] = useState(false);
+  const [editingProblem, setEditingProblem] = useState(false);
+  const [editForm, setEditForm] = useState({ title: "", description: "" });
+  const [editBusy, setEditBusy] = useState(false);
 
   const [problem, setProblem] = useState(null);
   const [commitments, setCommitments] = useState([]);
@@ -120,6 +124,30 @@ export default function ProblemDetail() {
     }
   };
 
+  const startEditProblem = () => {
+    setEditForm({ title: problem.title, description: problem.description });
+    setEditingProblem(true);
+  };
+
+  const saveEditProblem = async () => {
+    if (!editForm.title.trim() || !editForm.description.trim()) return;
+    setEditBusy(true);
+    setError("");
+    try {
+      const data = await api.updateProblem(
+        id,
+        { title: editForm.title, description: editForm.description, category: problem.category },
+        token
+      );
+      setProblem(data.problem);
+      setEditingProblem(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
   const reloadProblem = async () => {
     const probData = await api.getProblem(id, token);
     setProblem(probData.problem);
@@ -148,7 +176,22 @@ export default function ProblemDetail() {
             <span style={styles.category}>{problem.category}</span>
             <StatusBadge status={problem.status} size="md" />
           </div>
-          <h1 style={styles.title}>{problem.title}</h1>
+          {problem.isHidden && (
+            <div className="error-banner" style={{ marginBottom: 14 }}>
+              This post is hidden from other users pending review after being reported multiple times. Only you can see it right now.
+            </div>
+          )}
+          {editingProblem ? (
+            <div style={{ margin: "12px 0" }}>
+              <input
+                value={editForm.title}
+                onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                style={styles.editTitleInput}
+              />
+            </div>
+          ) : (
+            <h1 style={styles.title}>{problem.title}</h1>
+          )}
           <p style={styles.meta}>
             Posted by{" "}
             {problem.user_id ? (
@@ -158,9 +201,34 @@ export default function ProblemDetail() {
             ) : (
               problem.author_name
             )}{" "}
-            · {formatDate(problem.created_at)} · {problem.followerCount} following
+            · {formatDate(problem.created_at)}
+            {problem.edited_at && <span style={styles.editedTag}> · edited</span>}
+            {" "}· {problem.followerCount} following
           </p>
-          <p style={styles.desc}>{problem.description}</p>
+          {editingProblem ? (
+            <div>
+              <textarea
+                rows={5}
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                style={{ width: "100%" }}
+              />
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={saveEditProblem}
+                  disabled={editBusy || !editForm.title.trim() || !editForm.description.trim()}
+                >
+                  {editBusy ? "Saving…" : "Save"}
+                </button>
+                <button className="btn btn-sm" onClick={() => setEditingProblem(false)} disabled={editBusy}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p style={styles.desc}>{problem.description}</p>
+          )}
           {problem.trendScore > 10 && (
             <div style={{ marginTop: 12 }}>
               <span style={{ ...styles.category, background: "var(--spark-soft)", color: "var(--ink)", fontWeight: 700 }}>
@@ -174,19 +242,16 @@ export default function ProblemDetail() {
               {problem.isFollowing ? "Following ✓" : "Follow for updates"}
             </button>
             <ShareButton problem={problem} />
-            {problem.isMine && (
-              <button
-                className="btn btn-sm"
-                onClick={handleDelete}
-                disabled={deleting}
-                style={styles.deleteBtn}
-              >
-                {deleting ? "Deleting…" : "Delete"}
-              </button>
+            {!problem.isMine && (
+              <span style={{ marginLeft: "auto", alignSelf: "center" }}>
+                <ReportButton targetType="problem" targetId={problem.id} />
+              </span>
             )}
-            <span style={{ marginLeft: "auto", alignSelf: "center" }}>
-              <ReportButton targetType="problem" targetId={problem.id} />
-            </span>
+            {problem.isMine && !editingProblem && (
+              <span style={{ marginLeft: "auto", alignSelf: "center" }}>
+                <PostMenu onEdit={startEditProblem} onDelete={handleDelete} deleting={deleting} />
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -383,36 +448,17 @@ function Discussion({ problemId, user, token, myStartups }) {
       {comments.length > 0 && (
         <div style={styles.commentList}>
           {comments.map((c) => (
-            <div key={c.id} style={styles.commentItem}>
-              <div style={styles.commentHead}>
-                <span style={styles.commentAuthor}>
-                  {c.startup ? (
-                    <>
-                      <Link to={`/startups/${c.startup.id}`} style={{ fontWeight: 600 }}>
-                        {c.startup.name}
-                      </Link>
-                      {c.startup.claimed ? " ✓" : ""}
-                      <span className="mono" style={styles.startupChip}>STARTUP</span>
-                      <span style={styles.commentVia}>via {c.author_name}</span>
-                    </>
-                  ) : c.author_id ? (
-                    <Link to={`/users/${c.author_id}`} style={{ fontWeight: 600, fontSize: 13.5 }}>
-                      {c.author_name}{c.isMine ? " (you)" : ""}
-                    </Link>
-                  ) : (
-                    <strong style={{ fontSize: 13.5 }}>
-                      {c.author_name}
-                      {c.isMine ? " (you)" : ""}
-                    </strong>
-                  )}
-                </span>
-                <span style={styles.commentHeadRight}>
-                  <span className="mono" style={styles.commentDate}>{formatDate(c.created_at)}</span>
-                  <ReportButton targetType="comment" targetId={c.id} />
-                </span>
-              </div>
-              <p style={styles.commentBody}>{c.body}</p>
-            </div>
+            <CommentItem
+              key={c.id}
+              comment={c}
+              problemId={problemId}
+              token={token}
+              user={user}
+              onChange={(updated) =>
+                setComments((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
+              }
+              onDelete={(id) => setComments((prev) => prev.filter((x) => x.id !== id))}
+            />
           ))}
         </div>
       )}
@@ -449,6 +495,138 @@ function Discussion({ problemId, user, token, myStartups }) {
         <p style={styles.hint}>
           <Link to="/login" style={{ fontWeight: 600 }}>Log in</Link> to join the discussion.
         </p>
+      )}
+    </div>
+  );
+}
+
+// One row in the discussion thread. Handles its own edit and like state so
+// a keystroke in one comment's textarea doesn't re-render the whole list.
+function CommentItem({ comment, problemId, token, user, onChange, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [body, setBody] = useState(comment.body);
+  const [busy, setBusy] = useState(false);
+  const [liking, setLiking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+
+  const startEdit = () => {
+    setBody(comment.body);
+    setError("");
+    setEditing(true);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this comment for good? This can't be undone.")) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await api.deleteComment(problemId, comment.id, token);
+      onDelete(comment.id);
+    } catch (err) {
+      setError(err.message);
+      setDeleting(false);
+    }
+  };
+
+  const saveEdit = async () => {
+    if (!body.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.updateComment(problemId, comment.id, body, token);
+      onChange({ ...comment, body: body.trim(), edited_at: new Date().toISOString() });
+      setEditing(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleLike = async () => {
+    if (liking) return;
+    setLiking(true);
+    const prevLiked = comment.liked;
+    const prevCount = comment.likeCount;
+    onChange({ ...comment, liked: !prevLiked, likeCount: prevCount + (prevLiked ? -1 : 1) });
+    try {
+      const data = await api.likeComment(problemId, comment.id, token);
+      onChange({ ...comment, liked: data.liked, likeCount: data.likeCount });
+    } catch {
+      onChange({ ...comment, liked: prevLiked, likeCount: prevCount });
+    } finally {
+      setLiking(false);
+    }
+  };
+
+  return (
+    <div style={styles.commentItem}>
+      <div style={styles.commentHead}>
+        <span style={styles.commentAuthor}>
+          {comment.startup ? (
+            <>
+              <Link to={`/startups/${comment.startup.id}`} style={{ fontWeight: 600 }}>
+                {comment.startup.name}
+              </Link>
+              {comment.startup.claimed ? " ✓" : ""}
+              <span className="mono" style={styles.startupChip}>STARTUP</span>
+              <span style={styles.commentVia}>via {comment.author_name}</span>
+            </>
+          ) : comment.author_id ? (
+            <Link to={`/users/${comment.author_id}`} style={{ fontWeight: 600, fontSize: 13.5 }}>
+              {comment.author_name}{comment.isMine ? " (you)" : ""}
+            </Link>
+          ) : (
+            <strong style={{ fontSize: 13.5 }}>
+              {comment.author_name}
+              {comment.isMine ? " (you)" : ""}
+            </strong>
+          )}
+        </span>
+        <span style={styles.commentHeadRight}>
+          {comment.edited_at && <span style={styles.editedTag}>edited</span>}
+          <span className="mono" style={styles.commentDate}>{formatDate(comment.created_at)}</span>
+          {!comment.isMine && <ReportButton targetType="comment" targetId={comment.id} />}
+          {comment.isMine && !editing && (
+            <PostMenu onEdit={startEdit} onDelete={handleDelete} deleting={deleting} />
+          )}
+        </span>
+      </div>
+
+      {error && <div className="error-banner">{error}</div>}
+
+      {editing ? (
+        <div>
+          <textarea
+            rows={3}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            style={{ width: "100%", marginBottom: 8 }}
+          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-sm btn-primary" onClick={saveEdit} disabled={busy || !body.trim()}>
+              {busy ? "Saving…" : "Save"}
+            </button>
+            <button className="btn btn-sm" onClick={() => setEditing(false)} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p style={styles.commentBody}>{comment.body}</p>
+      )}
+
+      {user && (
+        <button
+          style={{ ...styles.likeBtn, ...(comment.liked ? styles.likeBtnActive : null) }}
+          onClick={toggleLike}
+          disabled={liking}
+          aria-pressed={comment.liked}
+        >
+          <span>{comment.liked ? "♥" : "♡"}</span>
+          {comment.likeCount > 0 && <span className="mono">{comment.likeCount}</span>}
+        </button>
       )}
     </div>
   );
@@ -797,10 +975,14 @@ const styles = {
     color: "var(--ink)", background: "var(--paper-dim)", padding: "3px 8px", borderRadius: 2,
   },
   title: { fontSize: 26, fontWeight: 700, margin: "12px 0 8px" },
+  editTitleInput: {
+    fontSize: 22, fontWeight: 700, fontFamily: "var(--display)", width: "100%",
+    padding: "9px 13px", borderRadius: 3, border: "1.5px solid var(--line)",
+  },
   meta: { fontSize: 13, color: "var(--text-dim)", marginBottom: 16 },
   desc: { fontSize: 15.5, lineHeight: 1.6, color: "var(--text)" },
+  editedTag: { fontStyle: "italic", color: "var(--text-dim)" },
   problemActions: { marginTop: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
-  deleteBtn: { borderColor: "var(--signal)", color: "var(--signal)" },
   commitmentsBox: {
     border: "1.5px solid var(--build)", borderRadius: 4, padding: "14px 18px",
     marginBottom: 24, background: "#fff",
@@ -873,7 +1055,7 @@ const styles = {
   },
   commentVia: { fontSize: 12, color: "var(--text-dim)" },
   commentDate: { fontSize: 11.5, color: "var(--text-dim)" },
-  commentHeadRight: { display: "flex", alignItems: "center", gap: 12 },
+  commentHeadRight: { display: "flex", alignItems: "center", gap: 10 },
   authorLink: { fontWeight: 600, color: "var(--ink)" },
   embedWrap: { marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 12 },
   embedToggle: {
@@ -889,4 +1071,11 @@ const styles = {
   commentBody: { fontSize: 14, lineHeight: 1.55, color: "var(--text)", whiteSpace: "pre-wrap" },
   commentForm: { padding: 18 },
   commentFormRow: { display: "flex", justifyContent: "flex-end", gap: 12, alignItems: "center", flexWrap: "wrap" },
+  likeBtn: {
+    display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10,
+    background: "none", border: "1.5px solid var(--line)", borderRadius: 3,
+    padding: "4px 11px", fontSize: 13, color: "var(--text-dim)", fontFamily: "inherit",
+    transition: "transform 0.12s ease, color 0.12s ease, border-color 0.12s ease",
+  },
+  likeBtnActive: { color: "var(--signal)", borderColor: "var(--signal)" },
 };

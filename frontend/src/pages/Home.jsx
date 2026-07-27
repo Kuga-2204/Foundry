@@ -139,7 +139,7 @@ function Schematic() {
       <path d="M 126 196 L 126 247" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
       <path d="M 394 196 L 394 247" stroke="var(--text-on-dark-dim)" strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arrow)" />
 
-      {/* 01 PROBLEM — top left */}
+      {/* 01 PROBLEM: top left */}
       <g transform="translate(40,52)">
         <rect width="172" height="144" rx="6" fill="var(--ink-soft)" stroke="var(--spark)" strokeWidth="1.5" />
         <rect x="16" y="15" width="28" height="20" rx="4" fill="var(--spark)" />
@@ -158,7 +158,7 @@ function Schematic() {
         <text x="0" y="13" textAnchor="middle" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="7.5" letterSpacing="1.5">VOTES</text>
       </g>
 
-      {/* 02 MATCH — top right */}
+      {/* 02 MATCH: top right */}
       <g transform="translate(308,52)">
         <rect width="172" height="144" rx="6" fill="var(--ink-soft)" stroke="var(--build)" strokeWidth="1.5" />
         <rect x="16" y="15" width="28" height="20" rx="4" fill="var(--build)" />
@@ -170,7 +170,7 @@ function Schematic() {
         <text x="16" y="124" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="12">this exact pain</text>
       </g>
 
-      {/* PEOPLE WAITING — bottom left, balances the composition */}
+      {/* PEOPLE WAITING: bottom left, balances the composition */}
       <g transform="translate(40,250)">
         <rect width="172" height="118" rx="6" fill="var(--ink-soft)" stroke="var(--signal)" strokeWidth="1.5" />
         <text x="16" y="29" fill="var(--signal)" fontFamily="IBM Plex Mono" fontSize="11" letterSpacing="1.2">PEOPLE WAITING</text>
@@ -190,7 +190,7 @@ function Schematic() {
         <text x="16" y="104" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="10.5">all pinged when it ships</text>
       </g>
 
-      {/* 03 VERIFY — bottom right */}
+      {/* 03 VERIFY: bottom right */}
       <g transform="translate(308,250)">
         <rect width="172" height="118" rx="6" fill="var(--ink-soft)" stroke="var(--text-on-dark-dim)" strokeOpacity="0.5" strokeWidth="1.5" />
         <rect x="16" y="15" width="28" height="20" rx="4" fill="var(--text-on-dark-dim)" />
@@ -198,7 +198,7 @@ function Schematic() {
         <text x="52" y="29" fill="var(--text-on-dark-dim)" fontFamily="IBM Plex Mono" fontSize="11" letterSpacing="1.5">VERIFY</text>
         <line x1="16" y1="47" x2="156" y2="47" stroke="var(--text-on-dark-dim)" strokeOpacity="0.22" strokeWidth="1" />
         <text x="16" y="79" fill="var(--spark)" fontFamily="Inter" fontSize="17" letterSpacing="3">★★★★★</text>
-        <text x="16" y="104" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11.5">"solved it" — Alice</text>
+        <text x="16" y="104" fill="var(--text-on-dark-dim)" fontFamily="Inter" fontSize="11.5">"solved it", Alice</text>
       </g>
 
       {/* annotation footer */}
@@ -291,15 +291,24 @@ function WhyBoth() {
 }
 
 function FinalCta({ user }) {
+  const isMobile = useMediaQuery("(max-width: 860px)");
   return (
     <section style={s.finalCta}>
       <div className="wrap" style={s.finalCtaInner}>
         <h2 style={s.finalCtaTitle}>Your problem is either solved, or about to be. Find out which.</h2>
-        <div style={s.ctaRow}>
-          <Link to={user ? "/post" : "/register"} className="btn btn-spark">
+        <div style={{ ...s.ctaRow, ...(isMobile ? s.ctaRowMobile : null) }}>
+          <Link
+            to={user ? "/post" : "/register"}
+            className="btn btn-spark"
+            style={isMobile ? s.ctaBtnMobile : null}
+          >
             Describe your problem →
           </Link>
-          <Link to="/startups" className="btn btn-ghost-dark">
+          <Link
+            to="/startups"
+            className="btn btn-ghost-dark"
+            style={isMobile ? s.ctaBtnMobile : null}
+          >
             List your startup
           </Link>
         </div>
@@ -327,7 +336,7 @@ const s = {
   hero: { background: "var(--ink)", padding: "72px 0 88px" },
   heroMobile: { padding: "40px 0 48px" },
   heroInner: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center" },
-  // Note: no `padding: 0` here — that would override the .wrap class's mobile
+  // Note: no `padding: 0` here; that would override the .wrap class's mobile
   // padding and let the text run into the screen edges.
   heroInnerMobile: { gridTemplateColumns: "1fr", gap: 0 },
   h1Mobile: { fontSize: 30, lineHeight: 1.2, maxWidth: "100%", marginBottom: 16 },
