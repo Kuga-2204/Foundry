@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import VoteControl from "./VoteControl.jsx";
 import StatusBadge from "./StatusBadge.jsx";
+import ShareButton from "./ShareButton.jsx";
+import ReportButton from "./ReportButton.jsx";
 import { formatDate } from "../utils.js";
 
 export default function ProblemCard({ problem, onVote }) {
@@ -48,6 +50,11 @@ export default function ProblemCard({ problem, onVote }) {
             </span>
           )}
         </div>
+
+        <div style={styles.actions}>
+          <ShareButton problem={problem} />
+          <ReportButton targetType="problem" targetId={problem.id} />
+        </div>
       </div>
     </div>
   );
@@ -93,5 +100,6 @@ const styles = {
   },
   footer: { display: "flex", gap: 16, fontSize: 12.5, color: "var(--text-dim)" },
   footerItem: { display: "inline-flex", alignItems: "center" },
+  actions: { display: "flex", alignItems: "center", gap: 14, marginTop: 14 },
   solved: { color: "var(--build)", fontWeight: 600 },
 };
