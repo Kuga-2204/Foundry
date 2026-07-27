@@ -5,7 +5,13 @@ import StatusBadge from "./StatusBadge.jsx";
 import NoSolutionBadge from "./NoSolutionBadge.jsx";
 import { formatDate } from "../utils.js";
 
-export default function ProblemCard({ problem, onVote, onFollow, voting = false, following = false }) {
+export default function ProblemCard({
+  problem,
+  onVote,
+  onFollow,
+  voting = false,
+  following = false,
+}) {
   return (
     <div className="card" style={styles.card}>
       <VoteControl
@@ -45,7 +51,9 @@ export default function ProblemCard({ problem, onVote, onFollow, voting = false,
         <div style={styles.footer}>
           <div style={styles.footerItems}>
             <span style={styles.footerItem}>by {problem.author_name}</span>
-            <span style={styles.footerItem}>{problem.followerCount} following</span>
+            <span style={styles.footerItem}>
+              {problem.followerCount} following
+            </span>
             <span
               style={{
                 ...styles.footerItem,
@@ -58,12 +66,14 @@ export default function ProblemCard({ problem, onVote, onFollow, voting = false,
             </span>
             {problem.commentCount > 0 && (
               <span style={styles.footerItem}>
-                {problem.commentCount} comment{problem.commentCount > 1 ? "s" : ""}
+                {problem.commentCount} comment
+                {problem.commentCount > 1 ? "s" : ""}
               </span>
             )}
             {problem.mediaCount > 0 && (
               <span style={styles.footerItem}>
-                {problem.mediaCount} attachment{problem.mediaCount > 1 ? "s" : ""}
+                {problem.mediaCount} attachment
+                {problem.mediaCount > 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -75,7 +85,11 @@ export default function ProblemCard({ problem, onVote, onFollow, voting = false,
               onClick={() => onFollow(problem.id)}
               disabled={following}
             >
-              {following ? "Saving..." : problem.isFollowing ? "Following ✓" : "Follow for updates"}
+              {following
+                ? "Saving..."
+                : problem.isFollowing
+                  ? "Following ✓"
+                  : "Follow for updates"}
             </button>
             <ShareButton problem={problem} />
           </div>
