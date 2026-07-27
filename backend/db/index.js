@@ -236,6 +236,21 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS banned INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE problems ADD COLUMN IF NOT EXISTS hidden INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE comments ADD COLUMN IF NOT EXISTS hidden INTEGER NOT NULL DEFAULT 0;
 
+-- Editing: both problems and comments can be edited by their author after
+-- posting. edited_at is null until the first edit, then stamped on every
+-- subsequent one; the frontend shows an "edited" tag whenever it's set.
+ALTER TABLE problems ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS comment_likes (
+  id SERIAL PRIMARY KEY,
+  comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(comment_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
+
 CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_type, target_id);
 -- One report per signed-in reporter per target. Anonymous reports (no
 -- reporter_id) are intentionally left undeduped.

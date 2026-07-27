@@ -324,6 +324,32 @@ router.get("/:id", optionalAuth, async (req, res) => {
   res.json({ problem, commitments });
 });
 
+// Edit a problem. Only the person who posted it can change it. Stamps
+// edited_at so the frontend can show an "edited" tag next to the post.
+router.put("/:id", requireAuth, async (req, res) => {
+  const { title, description, category } = req.body;
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+  if (problem.user_id !== req.userId) {
+    return res.status(403).json({ error: "You can only edit a problem you posted." });
+  }
+
+  const newTitle = String(title || "").trim();
+  const newDescription = String(description || "").trim();
+  if (!newTitle || !newDescription) {
+    return res.status(400).json({ error: "Title and description are required." });
+  }
+  const flagged = moderate(newTitle, newDescription);
+  if (flagged) return res.status(400).json({ error: flagged });
+  const cat = CATEGORIES.includes(category) ? category : problem.category;
+
+  await db
+    .prepare("UPDATE problems SET title = ?, description = ?, category = ?, edited_at = now() WHERE id = ?")
+    .run(newTitle, newDescription, cat, req.params.id);
+
+  res.json({ problem: await getFullProblem(req.params.id, req.userId) });
+});
+
 // Delete a problem. Only the person who posted it can remove it. Votes,
 // followers, comments, solutions, and media rows are removed by the ON DELETE
 // CASCADE foreign keys, so a single delete cleans up the whole thread.
@@ -481,29 +507,93 @@ router.get("/:id/comments", optionalAuth, async (req, res) => {
 
   const rows = await db
     .prepare(
-      `SELECT c.id, c.body, c.created_at, c.user_id, c.startup_id,
-              u.name AS author_name, s.name AS startup_name, s.claimed AS startup_claimed
+      `SELECT c.id, c.body, c.created_at, c.edited_at, c.user_id, c.startup_id,
+              u.name AS author_name, s.name AS startup_name, s.claimed AS startup_claimed,
+              COALESCE(lc.c, 0) AS like_count,
+              CASE WHEN ml.comment_id IS NOT NULL THEN 1 ELSE 0 END AS liked
        FROM comments c
        JOIN users u ON u.id = c.user_id
        LEFT JOIN startups s ON s.id = c.startup_id
+       LEFT JOIN (SELECT comment_id, COUNT(*) AS c FROM comment_likes GROUP BY comment_id) lc
+              ON lc.comment_id = c.id
+       LEFT JOIN comment_likes ml ON ml.comment_id = c.id AND ml.user_id = ?
        WHERE c.problem_id = ? AND (c.hidden = 0 OR c.user_id = ?)
        ORDER BY c.created_at ASC, c.id ASC`
     )
-    .all(req.params.id, req.userId || -1);
+    .all(req.userId || -1, req.params.id, req.userId || -1);
 
   res.json({
     comments: rows.map((r) => ({
       id: r.id,
       body: r.body,
       created_at: r.created_at,
+      edited_at: r.edited_at,
       author_name: r.author_name,
       author_id: r.user_id,
       isMine: !!req.userId && r.user_id === req.userId,
+      likeCount: r.like_count,
+      liked: !!r.liked,
       startup: r.startup_id
         ? { id: r.startup_id, name: r.startup_name, claimed: !!r.startup_claimed }
         : null,
     })),
   });
+});
+
+// Edit a comment. Only the person who posted it can change it.
+router.put("/:id/comments/:commentId", requireAuth, async (req, res) => {
+  const comment = await db
+    .prepare("SELECT * FROM comments WHERE id = ? AND problem_id = ?")
+    .get(req.params.commentId, req.params.id);
+  if (!comment) return res.status(404).json({ error: "Comment not found." });
+  if (comment.user_id !== req.userId) {
+    return res.status(403).json({ error: "You can only edit a comment you posted." });
+  }
+
+  const body = String(req.body.body || "").trim();
+  if (!body) return res.status(400).json({ error: "Comment can't be empty." });
+  if (body.length > 2000) return res.status(400).json({ error: "Comment is too long (2000 characters max)." });
+  const flagged = moderate(body);
+  if (flagged) return res.status(400).json({ error: flagged });
+
+  await db.prepare("UPDATE comments SET body = ?, edited_at = now() WHERE id = ?").run(body, req.params.commentId);
+  res.json({ ok: true });
+});
+
+// Delete a comment. Only the person who posted it can remove it. Likes on
+// it are removed by the ON DELETE CASCADE foreign key.
+router.delete("/:id/comments/:commentId", requireAuth, async (req, res) => {
+  const comment = await db
+    .prepare("SELECT * FROM comments WHERE id = ? AND problem_id = ?")
+    .get(req.params.commentId, req.params.id);
+  if (!comment) return res.status(404).json({ error: "Comment not found." });
+  if (comment.user_id !== req.userId) {
+    return res.status(403).json({ error: "You can only delete a comment you posted." });
+  }
+  await db.prepare("DELETE FROM comments WHERE id = ?").run(req.params.commentId);
+  res.json({ ok: true });
+});
+
+// Toggle a like on a comment.
+router.post("/:id/comments/:commentId/like", requireAuth, async (req, res) => {
+  const comment = await db
+    .prepare("SELECT id FROM comments WHERE id = ? AND problem_id = ?")
+    .get(req.params.commentId, req.params.id);
+  if (!comment) return res.status(404).json({ error: "Comment not found." });
+
+  const existing = await db
+    .prepare("SELECT id FROM comment_likes WHERE comment_id = ? AND user_id = ?")
+    .get(req.params.commentId, req.userId);
+  if (existing) {
+    await db.prepare("DELETE FROM comment_likes WHERE id = ?").run(existing.id);
+  } else {
+    await db.prepare("INSERT INTO comment_likes (comment_id, user_id) VALUES (?, ?)").run(req.params.commentId, req.userId);
+  }
+  const { c: likeCount } = await db
+    .prepare("SELECT COUNT(*)::int AS c FROM comment_likes WHERE comment_id = ?")
+    .get(req.params.commentId);
+
+  res.json({ liked: !existing, likeCount });
 });
 
 router.post("/:id/comments", requireAuth, async (req, res) => {

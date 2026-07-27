@@ -4,14 +4,14 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 // First-run nudge. New users land on the problems board after signing up; a
 // blank-looking board reads as dead, so this points them straight at the two
-// actions that matter — see what's active, or post their own frustration.
+// actions that matter: see what's active, or post their own frustration.
 // Dismissed once per user, remembered in localStorage.
 export default function WelcomeBanner() {
   const { user } = useAuth();
   const [closed, setClosed] = useState(false);
 
   // user is null on the first render while auth loads, so we can't read the
-  // dismissal flag until it resolves — reading it here (not in useState init)
+  // dismissal flag until it resolves; reading it here (not in useState init)
   // means the banner re-evaluates correctly once the user arrives.
   if (!user || closed) return null;
   const key = `sy_welcome_dismissed_${user.id}`;
