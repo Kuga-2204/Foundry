@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 import NoSolutionBadge from "../components/NoSolutionBadge.jsx";
 import { formatDate } from "../utils.js";
 
@@ -52,7 +53,7 @@ export default function Dashboard() {
     loadLeads();
   }, [loadLeads]);
 
-  if (loading) return <div className="wrap" style={{ padding: 48 }}>Loading...</div>;
+  if (loading) return <LoadingScreen label="Searching dashboard" />;
 
   const active = startups.find((s) => s.id === activeId);
 
@@ -227,7 +228,7 @@ function StartupDashboard({ startups, active, activeId, setActiveId, leads, stat
         Reply with a solution or commit to building a fix; everyone following the problem gets notified.
       </p>
       {leadsLoading ? (
-        <p style={styles.emptyNote}>Loading...</p>
+        <LoadingScreen label="Searching matched problems" />
       ) : leads.strong.length === 0 ? (
         <p style={styles.emptyNote}>
           No matches yet. Add more "problems we solve" statements to your profile.

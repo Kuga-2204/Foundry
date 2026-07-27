@@ -14,11 +14,12 @@ import StartupForm from "./pages/StartupForm.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import UserProfile from "./pages/UserProfile.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
+import LoadingScreen from "./components/LoadingScreen.jsx";
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return null;
+  if (loading) return <LoadingScreen label="Checking session" />;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   return children;
 }

@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import ProblemCard from "../components/ProblemCard.jsx";
 import WelcomeBanner from "../components/WelcomeBanner.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 import { optimisticVote } from "../voteUtils.js";
 
 export default function Problems() {
@@ -162,7 +163,7 @@ export default function Problems() {
       {error && <div className="error-banner">{error}</div>}
 
       {loading ? (
-        <p style={styles.empty}>Loading…</p>
+        <LoadingScreen label="Searching problems" />
       ) : problems.length === 0 ? (
         <div style={styles.emptyState}>
           <p style={{ fontWeight: 600, marginBottom: 6 }}>No problems here yet.</p>

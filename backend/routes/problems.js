@@ -9,7 +9,7 @@ import {
   normaliseAnonymousHandle,
   validateAnonymousHandle,
 } from "../lib/anon.js";
-import { upload, uploadProblemMedia } from "../lib/uploads.js";
+import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
 
@@ -248,6 +248,30 @@ function attachTrendScores(problems) {
 
 router.get("/categories", (_req, res) => {
   res.json({ categories: CATEGORIES });
+});
+
+router.get("/media", async (req, res) => {
+  const mediaRef = req.query.url || req.query.path;
+  if (!mediaRef) return res.status(400).json({ error: "Missing media reference." });
+
+  try {
+    const storageRes = await fetchProblemMedia(mediaRef, req.headers.range);
+    const contentType = storageRes.headers.get("content-type") || "application/octet-stream";
+    const cacheControl = storageRes.headers.get("cache-control") || "public, max-age=31536000, immutable";
+    const contentLength = storageRes.headers.get("content-length");
+    const contentRange = storageRes.headers.get("content-range");
+    res.status(storageRes.status === 206 ? 206 : 200);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", cacheControl);
+    res.setHeader("Accept-Ranges", "bytes");
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    if (contentRange) res.setHeader("Content-Range", contentRange);
+    const buffer = Buffer.from(await storageRes.arrayBuffer());
+    res.send(buffer);
+  } catch (err) {
+    console.warn("problem media proxy failed", err);
+    res.status(404).json({ error: "Attachment not found." });
+  }
 });
 
 // Live matching while a user types a problem: "does a startup already solve

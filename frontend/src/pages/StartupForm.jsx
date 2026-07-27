@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 
 // Create or edit a startup profile. The "problems we solve" statements are
 // the matching corpus: they should read the way a frustrated user would
@@ -72,7 +73,7 @@ export default function StartupForm({ edit = false }) {
     }
   };
 
-  if (loading) return <div className="wrap" style={{ padding: 48 }}>Loading…</div>;
+  if (loading) return <LoadingScreen label="Searching startup profile" />;
 
   return (
     <div className="wrap" style={styles.wrap}>
