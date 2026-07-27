@@ -9,7 +9,7 @@ import {
   normaliseAnonymousHandle,
   validateAnonymousHandle,
 } from "../lib/anon.js";
-import { upload, uploadProblemMedia } from "../lib/uploads.js";
+import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
 
@@ -120,6 +120,24 @@ async function getFullProblem(id, userId) {
 
 router.get("/categories", (_req, res) => {
   res.json({ categories: CATEGORIES });
+});
+
+router.get("/media", async (req, res) => {
+  const mediaRef = req.query.url || req.query.path;
+  if (!mediaRef) return res.status(400).json({ error: "Missing media reference." });
+
+  try {
+    const storageRes = await fetchProblemMedia(mediaRef);
+    const contentType = storageRes.headers.get("content-type") || "application/octet-stream";
+    const cacheControl = storageRes.headers.get("cache-control") || "public, max-age=31536000, immutable";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", cacheControl);
+    const buffer = Buffer.from(await storageRes.arrayBuffer());
+    res.send(buffer);
+  } catch (err) {
+    console.warn("problem media proxy failed", err);
+    res.status(404).json({ error: "Attachment not found." });
+  }
 });
 
 // Live matching while a user types a problem: "does a startup already solve

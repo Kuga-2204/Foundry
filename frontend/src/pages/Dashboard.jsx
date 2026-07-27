@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { StarsDisplay } from "../components/Stars.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 
 // Startup dashboard: the lead feed. Problems that match what your startup
 // solves (with the user's raw phrasing), plus adjacent problems in your
@@ -46,7 +47,7 @@ export default function Dashboard() {
     loadLeads();
   }, [loadLeads]);
 
-  if (loading) return <div className="wrap" style={{ padding: 48 }}>Loading…</div>;
+  if (loading) return <LoadingScreen label="Searching dashboard" />;
 
   if (startups.length === 0) {
     return (
@@ -139,7 +140,7 @@ export default function Dashboard() {
       </p>
 
       {leadsLoading ? (
-        <p style={styles.emptyNote}>Loading…</p>
+        <LoadingScreen label="Searching matched problems" />
       ) : leads.strong.length === 0 ? (
         <p style={styles.emptyNote}>
           No matches yet. Add more "problems we solve" statements to your profile; the more

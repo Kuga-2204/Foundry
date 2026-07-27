@@ -146,6 +146,75 @@ button {
   border-radius: var(--radius);
 }
 
+.loading-screen {
+  min-height: min(420px, calc(100vh - 86px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  padding: 56px 20px;
+}
+
+.loading-mark {
+  width: 86px;
+  height: 86px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.loading-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(15, 22, 38, 0.1);
+}
+
+.loading-ring::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--spark);
+  border-right-color: var(--build);
+  animation: loading-search 1.05s linear infinite;
+}
+
+.loading-ring::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 3px;
+  right: 5px;
+  bottom: 12px;
+  border-radius: 999px;
+  background: var(--ink);
+  transform: rotate(45deg);
+  transform-origin: center;
+}
+
+.loading-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 12px rgba(15, 22, 38, 0.14));
+}
+
+.loading-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+@keyframes loading-search {
+  to { transform: rotate(360deg); }
+}
+
 ::selection { background: var(--spark); color: var(--ink); }
 
 /* Media never overflows its container on small screens. */

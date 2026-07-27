@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { StarsDisplay } from "../components/Stars.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 import { formatDate } from "../utils.js";
 
 export default function StartupDetail() {
@@ -58,7 +59,7 @@ export default function StartupDetail() {
     }
   };
 
-  if (loading) return <div className="wrap" style={{ padding: 48 }}>Loading…</div>;
+  if (loading) return <LoadingScreen label="Searching startup details" />;
   if (error && !startup)
     return (
       <div className="wrap" style={{ padding: 48 }}>
