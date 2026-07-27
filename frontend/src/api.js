@@ -27,6 +27,9 @@ export const api = {
     request("/auth/reset-password", { method: "POST", body: { token, password } }),
 
   userProfile: (id) => request(`/users/${id}`),
+  userInterests: (token) => request("/users/me/interests", { token }),
+  updateUserInterests: (interests, token) =>
+    request("/users/me/interests", { method: "PUT", body: { interests }, token }),
   report: (target_type, target_id, reason) =>
     request("/reports", { method: "POST", body: { target_type, target_id, reason } }),
 
@@ -38,6 +41,7 @@ export const api = {
   getProblem: (id, token) => request(`/problems/${id}`, { token }),
   createProblem: (payload, token) => request("/problems", { method: "POST", body: payload, token }),
   deleteProblem: (id, token) => request(`/problems/${id}`, { method: "DELETE", token }),
+  problemDashboard: (token) => request("/problems/dashboard", { token }),
   vote: (id, type, token) => request(`/problems/${id}/vote`, { method: "POST", body: { type }, token }),
   followProblem: (id, token) => request(`/problems/${id}/follow`, { method: "POST", token }),
   // Token is optional but sent when present: it lets the backend credit the
