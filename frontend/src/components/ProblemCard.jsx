@@ -3,6 +3,7 @@ import VoteControl from "./VoteControl.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import ShareButton from "./ShareButton.jsx";
 import NoSolutionBadge from "./NoSolutionBadge.jsx";
+import ReportButton from "./ReportButton.jsx";
 import { formatDate } from "../utils.js";
 
 export default function ProblemCard({ problem, onVote, onFollow, voting = false, following = false }) {
@@ -66,6 +67,11 @@ export default function ProblemCard({ problem, onVote, onFollow, voting = false,
             <ShareButton problem={problem} />
           </span>
         </div>
+
+        <div style={styles.actions}>
+          <ShareButton problem={problem} />
+          <ReportButton targetType="problem" targetId={problem.id} />
+        </div>
       </div>
     </div>
   );
@@ -111,12 +117,6 @@ const styles = {
   },
   footer: { display: "flex", gap: 16, fontSize: 12.5, color: "var(--text-dim)", alignItems: "center", flexWrap: "wrap" },
   footerItem: { display: "inline-flex", alignItems: "center" },
-  actions: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    marginLeft: "auto",
-  },
-  actionButton: { color: "var(--ink)" },
+  actions: { display: "flex", alignItems: "center", gap: 14, marginTop: 14 },
   solved: { color: "var(--build)", fontWeight: 600 },
 };
