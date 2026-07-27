@@ -1,9 +1,12 @@
 import { Link } from "react-router-dom";
 import VoteControl from "./VoteControl.jsx";
 import StatusBadge from "./StatusBadge.jsx";
+import ShareButton from "./ShareButton.jsx";
+import NoSolutionBadge from "./NoSolutionBadge.jsx";
+import ReportButton from "./ReportButton.jsx";
 import { formatDate } from "../utils.js";
 
-export default function ProblemCard({ problem, onVote, voting = false }) {
+export default function ProblemCard({ problem, onVote, onFollow, voting = false, following = false }) {
   return (
     <div className="card" style={styles.card}>
       <VoteControl
@@ -17,6 +20,7 @@ export default function ProblemCard({ problem, onVote, voting = false }) {
           <span style={styles.badges}>
             <span style={styles.category}>{problem.category}</span>
             <StatusBadge status={problem.status} />
+            {problem.solutionCount === 0 && <NoSolutionBadge />}
             {problem.trendScore > 5 && (
               <span style={{ ...styles.category, background: "var(--spark-soft)", color: "var(--ink)" }}>
                 🔥 Trending
@@ -51,6 +55,22 @@ export default function ProblemCard({ problem, onVote, voting = false }) {
               {problem.mediaCount} attachment{problem.mediaCount > 1 ? "s" : ""}
             </span>
           )}
+          <span style={styles.actions}>
+            <button
+              className="btn btn-sm"
+              onClick={() => onFollow(problem.id)}
+              disabled={following}
+              style={styles.actionButton}
+            >
+              {following ? "Saving..." : problem.isFollowing ? "Following" : "Follow"}
+            </button>
+            <ShareButton problem={problem} />
+          </span>
+        </div>
+
+        <div style={styles.actions}>
+          <ShareButton problem={problem} />
+          <ReportButton targetType="problem" targetId={problem.id} />
         </div>
       </div>
     </div>
@@ -95,7 +115,8 @@ const styles = {
     overflow: "hidden",
     marginBottom: 12,
   },
-  footer: { display: "flex", gap: 16, fontSize: 12.5, color: "var(--text-dim)" },
+  footer: { display: "flex", gap: 16, fontSize: 12.5, color: "var(--text-dim)", alignItems: "center", flexWrap: "wrap" },
   footerItem: { display: "inline-flex", alignItems: "center" },
+  actions: { display: "flex", alignItems: "center", gap: 14, marginTop: 14 },
   solved: { color: "var(--build)", fontWeight: 600 },
 };

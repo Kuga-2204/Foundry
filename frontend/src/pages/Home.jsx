@@ -20,13 +20,13 @@ export default function Home() {
   );
 }
 
-/* ---------------- Trending: proof the board is alive ---------------- */
+/* ---------------- Discover: proof the board is alive ---------------- */
 function TrendingStrip() {
   const [problems, setProblems] = useState([]);
 
   useEffect(() => {
     api
-      .listProblems({ sort: "trending" })
+      .listProblems({ sort: "discover" })
       .then((d) => setProblems(d.problems.slice(0, 6)))
       .catch(() => {});
   }, []);
@@ -38,10 +38,10 @@ function TrendingStrip() {
       <div className="wrap">
         <div style={s.trendingHead}>
           <div>
-            <div style={s.trendingEyebrow} className="mono">TRENDING NOW</div>
-            <h2 style={s.trendingTitle}>What people are struggling with this week</h2>
+            <div style={s.trendingEyebrow} className="mono">DISCOVER</div>
+            <h2 style={s.trendingTitle}>Problems worth building around</h2>
           </div>
-          <Link to="/problems?sort=trending" style={s.trendingAll}>
+          <Link to="/problems?sort=discover" style={s.trendingAll}>
             See all problems →
           </Link>
         </div>
