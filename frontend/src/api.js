@@ -27,9 +27,11 @@ export const api = {
     request("/auth/reset-password", { method: "POST", body: { token, password } }),
 
   userProfile: (id) => request(`/users/${id}`),
-  report: (target_type, target_id, reason) =>
-    request("/reports", { method: "POST", body: { target_type, target_id, reason } }),
-
+  report: (target_type, target_id, reason, token) =>
+    request("/reports", { method: "POST", body: { target_type, target_id, reason }, token }),
+  userInterests: (token) => request("/users/me/interests", { token }),
+  updateUserInterests: (interests, token) =>
+    request("/users/me/interests", { method: "PUT", body: { interests }, token }),
   categories: () => request("/problems/categories"),
   listProblems: (params, token) => {
     const qs = new URLSearchParams(params).toString();
@@ -37,7 +39,9 @@ export const api = {
   },
   getProblem: (id, token) => request(`/problems/${id}`, { token }),
   createProblem: (payload, token) => request("/problems", { method: "POST", body: payload, token }),
+  updateProblem: (id, payload, token) => request(`/problems/${id}`, { method: "PUT", body: payload, token }),
   deleteProblem: (id, token) => request(`/problems/${id}`, { method: "DELETE", token }),
+  problemDashboard: (token) => request("/problems/dashboard", { token }),
   vote: (id, type, token) => request(`/problems/${id}/vote`, { method: "POST", body: { type }, token }),
   followProblem: (id, token) => request(`/problems/${id}/follow`, { method: "POST", token }),
   // Token is optional but sent when present: it lets the backend credit the
@@ -49,6 +53,12 @@ export const api = {
   listComments: (problemId, token) => request(`/problems/${problemId}/comments`, { token }),
   postComment: (problemId, payload, token) =>
     request(`/problems/${problemId}/comments`, { method: "POST", body: payload, token }),
+  updateComment: (problemId, commentId, body, token) =>
+    request(`/problems/${problemId}/comments/${commentId}`, { method: "PUT", body: { body }, token }),
+  deleteComment: (problemId, commentId, token) =>
+    request(`/problems/${problemId}/comments/${commentId}`, { method: "DELETE", token }),
+  likeComment: (problemId, commentId, token) =>
+    request(`/problems/${problemId}/comments/${commentId}/like`, { method: "POST", token }),
   commit: (id, startupId, note, token) =>
     request(`/problems/${id}/commit`, { method: "POST", body: { startup_id: startupId, note }, token }),
   ship: (id, startupId, token) =>

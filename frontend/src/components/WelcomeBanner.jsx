@@ -4,14 +4,14 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 // First-run nudge. New users land on the problems board after signing up; a
 // blank-looking board reads as dead, so this points them straight at the two
-// actions that matter — see what's active, or post their own frustration.
+// actions that matter: see what's active, or post their own frustration.
 // Dismissed once per user, remembered in localStorage.
 export default function WelcomeBanner() {
   const { user } = useAuth();
   const [closed, setClosed] = useState(false);
 
   // user is null on the first render while auth loads, so we can't read the
-  // dismissal flag until it resolves — reading it here (not in useState init)
+  // dismissal flag until it resolves; reading it here (not in useState init)
   // means the banner re-evaluates correctly once the user arrives.
   if (!user || closed) return null;
   const key = `sy_welcome_dismissed_${user.id}`;
@@ -32,8 +32,8 @@ export default function WelcomeBanner() {
         complaint sounds, the better the match.
       </p>
       <div style={styles.actions}>
-        <Link to="/problems?sort=trending" className="btn btn-sm" onClick={close}>
-          See what's trending
+        <Link to="/problems?sort=discover" className="btn btn-sm" onClick={close}>
+          Discover problems
         </Link>
         <Link to="/post" className="btn btn-sm btn-primary" onClick={close}>
           Describe your problem →

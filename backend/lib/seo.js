@@ -28,7 +28,7 @@ export async function metaForPath(pathname) {
       .prepare("SELECT title, description FROM problems WHERE id = ?")
       .get(problemMatch[1]);
     if (p) {
-      title = `${p.title} — ${site}`;
+      title = `${p.title} | ${site}`;
       desc = truncate(p.description);
     }
   }
@@ -39,7 +39,7 @@ export async function metaForPath(pathname) {
       .prepare("SELECT name, tagline, description FROM startups WHERE id = ?")
       .get(startupMatch[1]);
     if (s) {
-      title = `${s.name} — ${site}`;
+      title = `${s.name} | ${site}`;
       desc = truncate(s.tagline || s.description);
     }
   }

@@ -22,7 +22,7 @@ function deriveTitle(body) {
 // Post a problem. Quick by default: one complaint box, with title/category/
 // media tucked under "more options". Two live checks run while typing (does a
 // startup already solve this; is it already listed). The draft autosaves, and
-// people can write before signing up — the submit step gates on auth.
+// people can write before signing up; the submit step gates on auth.
 export default function PostProblem() {
   const { token, user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -243,7 +243,7 @@ export default function PostProblem() {
             ) : (
               <div style={styles.detailsBox}>
                 <div className="field">
-                  <label>Title <span style={styles.optional}>(optional — we'll make one from your description)</span></label>
+                  <label>Title <span style={styles.optional}>(optional: we'll make one from your description)</span></label>
                   <input
                     placeholder='e.g. "No fair way to split rent by usage"'
                     value={form.title}
@@ -335,7 +335,7 @@ export default function PostProblem() {
                         />
                         <span style={styles.anonHandleHelp}>
                           {user?.anon_handle
-                            ? `Your name is “${user.anon_handle}”. You can change it here anytime — it updates on all your anonymous posts.`
+                            ? `Your name is “${user.anon_handle}”. You can change it here anytime; it updates on all your anonymous posts.`
                             : "Leave blank and we'll make you a memorable, unique name. You can change it later."}
                         </span>
                       </span>
@@ -356,7 +356,7 @@ export default function PostProblem() {
             </button>
             {!user && (
               <p style={styles.authNote}>
-                Write it now — we'll ask you to create a quick account to publish, and your
+                Write it now, we'll ask you to create a quick account to publish, and your
                 draft is saved.
               </p>
             )}

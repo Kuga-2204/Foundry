@@ -111,11 +111,139 @@ async function getFullProblem(id, userId) {
     )
     .get(id);
   if (!row) return null;
+  // Hidden content stays visible only to the person who posted it, with a
+  // pending-review flag; everyone else gets a plain 404 upstream.
+  if (row.hidden && row.user_id !== userId) return null;
   const meta = await attachMeta(row, userId);
   meta.media = await db
     .prepare("SELECT id, file, kind FROM problem_media WHERE problem_id = ? ORDER BY id")
     .all(id);
+  if (row.hidden) meta.isHidden = true;
   return maskAnonymous(meta, userId);
+}
+
+function shuffle(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function engagementScore(problem) {
+  return problem.upvotes * 2 + problem.followerCount + problem.commentCount * 1.5;
+}
+
+function isUnsolvedWithoutSolutions(problem) {
+  return problem.status === "open" && problem.solutionCount === 0;
+}
+
+async function getInterestCategories(userId) {
+  if (!userId) return [];
+  const saved = await db
+    .prepare("SELECT category FROM user_interests WHERE user_id = ? ORDER BY category")
+    .all(userId);
+  if (saved.length > 0) return saved.map((row) => row.category);
+
+  const rows = await db
+    .prepare(
+      `SELECT category, SUM(weight) AS weight
+       FROM (
+         SELECT p.category, 3 AS weight
+         FROM problems p
+         WHERE p.user_id = ?
+
+         UNION ALL
+
+         SELECT p.category, 2 AS weight
+         FROM problem_followers f
+         JOIN problems p ON p.id = f.problem_id
+         WHERE f.user_id = ?
+
+         UNION ALL
+
+         SELECT p.category, 2 AS weight
+         FROM votes v
+         JOIN problems p ON p.id = v.problem_id
+         WHERE v.user_id = ? AND v.vote_type = 1
+       ) interests
+       GROUP BY category
+       ORDER BY weight DESC, category ASC
+       LIMIT 3`
+    )
+    .all(userId, userId, userId);
+  return rows.map((row) => row.category);
+}
+
+function takeProblems(pool, count, used, { preferUnsolved = false, highLiked = false } = {}) {
+  const available = pool.filter((problem) => !used.has(problem.id));
+  const ordered = highLiked
+    ? [...available].sort((a, b) => engagementScore(b) - engagementScore(a))
+    : shuffle(available);
+  const preferred = preferUnsolved
+    ? ordered.filter(isUnsolvedWithoutSolutions).concat(ordered.filter((p) => !isUnsolvedWithoutSolutions(p)))
+    : ordered;
+
+  const picked = preferred.slice(0, count);
+  for (const problem of picked) used.add(problem.id);
+  return picked;
+}
+
+function discoverRankProblems(problems, interestCategories) {
+  if (problems.length === 0) return [];
+
+  const interests = new Set(interestCategories);
+  const hasInterests = interests.size > 0;
+  const interestPool = hasInterests ? problems.filter((p) => interests.has(p.category)) : problems;
+  const nonInterestPool = hasInterests ? problems.filter((p) => !interests.has(p.category)) : problems;
+  const ranked = [];
+  const used = new Set();
+
+  while (ranked.length < problems.length) {
+    const blockStart = ranked.length;
+    const interestHighLiked = takeProblems(interestPool, 5, used, { preferUnsolved: true, highLiked: true });
+    const interestRandom = takeProblems(interestPool, 1, used, { preferUnsolved: true });
+    const nonInterestRandom = takeProblems(nonInterestPool, 4, used, { preferUnsolved: true });
+    let block = [...interestHighLiked, ...interestRandom, ...nonInterestRandom];
+
+    if (block.length < 10) {
+      block = block.concat(takeProblems(problems, 10 - block.length, used, { preferUnsolved: true }));
+    }
+
+    const unsolvedCount = block.filter(isUnsolvedWithoutSolutions).length;
+    if (unsolvedCount < 6) {
+      const replacements = takeProblems(
+        problems.filter(isUnsolvedWithoutSolutions),
+        6 - unsolvedCount,
+        used
+      );
+      const keep = [];
+      let replaceCount = replacements.length;
+      for (let i = block.length - 1; i >= 0; i--) {
+        if (replaceCount > 0 && !isUnsolvedWithoutSolutions(block[i])) {
+          used.delete(block[i].id);
+          replaceCount--;
+          continue;
+        }
+        keep.unshift(block[i]);
+      }
+      block = keep.concat(replacements);
+    }
+
+    ranked.push(...block);
+    if (ranked.length === blockStart) break;
+  }
+
+  return ranked;
+}
+
+function attachTrendScores(problems) {
+  const now = Date.now();
+  for (const p of problems) {
+    const ageDays = Math.max(0, (now - Date.parse(p.created_at)) / 86400000);
+    p.trendScore = (engagementScore(p) + p.solutionCount + 1) * Math.exp(-ageDays / 10);
+  }
 }
 
 router.get("/categories", (_req, res) => {
@@ -171,14 +299,14 @@ router.post("/match", optionalAuth, async (req, res) => {
 
 // Browse / feed
 router.get("/", optionalAuth, async (req, res) => {
-  const { sort = "top", category, search, status, mine } = req.query;
+  const { sort = "discover", category, search, status, mine } = req.query;
 
   let sql = `
     SELECT p.*, u.name AS author_name, u.anon_handle
     FROM problems p JOIN users u ON u.id = p.user_id
-    WHERE 1=1
+    WHERE (p.hidden = 0 OR p.user_id = ?)
   `;
-  const params = [];
+  const params = [req.userId || -1];
 
   if (category && category !== "All") {
     sql += " AND p.category = ?";
@@ -202,18 +330,15 @@ router.get("/", optionalAuth, async (req, res) => {
     maskAnonymous(p, req.userId)
   );
 
-  // Trending: recent activity beats stale popularity. Engagement (votes,
-  // followers, comments, solutions) decays with age so last week's hot
-  // problem doesn't sit on top forever.
-  if (sort === "trending") {
-    const now = Date.now();
-    for (const p of withMeta) {
-      const ageDays = Math.max(0, (now - Date.parse(p.created_at)) / 86400000);
-      p.trendScore =
-        (p.upvotes * 2 + p.followerCount + p.commentCount * 1.5 + p.solutionCount + 1) *
-        Math.exp(-ageDays / 10);
-    }
-    withMeta.sort((a, b) => b.trendScore - a.trendScore);
+  // Discover: every 10-problem block aims for 6 from the viewer's inferred
+  // interest categories, 4 outside them, 5 high-demand interest-category
+  // problems, 5 random slots, and at least 6 open problems with no solutions.
+  // When there are not enough problems in a bucket, the feed fills from the
+  // remaining pool instead of leaving holes.
+  attachTrendScores(withMeta);
+  if (sort === "discover" || sort === "trending") {
+    const interestCategories = await getInterestCategories(req.userId);
+    withMeta = discoverRankProblems(withMeta, interestCategories);
   } else if (sort === "top") withMeta.sort((a, b) => b.score - a.score);
   else if (sort === "new") withMeta.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   else if (sort === "followed") withMeta.sort((a, b) => b.followerCount - a.followerCount);
@@ -237,6 +362,113 @@ router.post("/similar", optionalAuth, async (req, res) => {
   );
   res.json({
     similar,
+  });
+});
+
+router.get("/dashboard", requireAuth, async (req, res) => {
+  const postedRows = await db
+    .prepare(
+      `SELECT p.*, u.name AS author_name, u.anon_handle
+       FROM problems p JOIN users u ON u.id = p.user_id
+       WHERE p.user_id = ?
+       ORDER BY p.created_at DESC`
+    )
+    .all(req.userId);
+
+  const followedRows = await db
+    .prepare(
+      `SELECT p.*, u.name AS author_name, u.anon_handle, f.created_at AS followed_at
+       FROM problem_followers f
+       JOIN problems p ON p.id = f.problem_id
+       JOIN users u ON u.id = p.user_id
+       WHERE f.user_id = ? AND p.user_id != ?
+       ORDER BY f.created_at DESC`
+    )
+    .all(req.userId, req.userId);
+
+  const activityRows = await db
+    .prepare(
+      `SELECT *
+       FROM (
+         SELECT s.id,
+                'solution' AS type,
+                s.created_at,
+                p.id AS problem_id,
+                p.title AS problem_title,
+                s.title AS headline,
+                u.name AS actor_name,
+                st.name AS startup_name,
+                NULL AS status,
+                s.description AS body
+         FROM solutions s
+         JOIN problems p ON p.id = s.problem_id
+         JOIN users u ON u.id = s.user_id
+         LEFT JOIN startups st ON st.id = s.startup_id
+         WHERE p.user_id = ?
+            OR EXISTS (
+              SELECT 1 FROM problem_followers f
+              WHERE f.problem_id = p.id AND f.user_id = ?
+            )
+
+         UNION ALL
+
+         SELECT c.id,
+                'comment' AS type,
+                c.created_at,
+                p.id AS problem_id,
+                p.title AS problem_title,
+                COALESCE(st.name, u.name) AS headline,
+                u.name AS actor_name,
+                st.name AS startup_name,
+                NULL AS status,
+                c.body
+         FROM comments c
+         JOIN problems p ON p.id = c.problem_id
+         JOIN users u ON u.id = c.user_id
+         LEFT JOIN startups st ON st.id = c.startup_id
+         WHERE p.user_id = ?
+            OR EXISTS (
+              SELECT 1 FROM problem_followers f
+              WHERE f.problem_id = p.id AND f.user_id = ?
+            )
+
+         UNION ALL
+
+         SELECT cm.id,
+                'commitment' AS type,
+                cm.created_at,
+                p.id AS problem_id,
+                p.title AS problem_title,
+                st.name AS headline,
+                st.name AS actor_name,
+                st.name AS startup_name,
+                cm.status,
+                cm.note AS body
+         FROM commitments cm
+         JOIN problems p ON p.id = cm.problem_id
+         JOIN startups st ON st.id = cm.startup_id
+         WHERE p.user_id = ?
+            OR EXISTS (
+              SELECT 1 FROM problem_followers f
+              WHERE f.problem_id = p.id AND f.user_id = ?
+            )
+       ) activity
+       ORDER BY created_at DESC, id DESC
+       LIMIT 30`
+    )
+    .all(req.userId, req.userId, req.userId, req.userId, req.userId, req.userId);
+
+  const postedProblems = (await attachMetaMany(postedRows, req.userId)).map((p) =>
+    maskAnonymous(p, req.userId)
+  );
+  const followedProblems = (await attachMetaMany(followedRows, req.userId)).map((p) =>
+    maskAnonymous(p, req.userId)
+  );
+
+  res.json({
+    postedProblems,
+    followedProblems,
+    updates: activityRows,
   });
 });
 
@@ -342,6 +574,32 @@ router.get("/:id", optionalAuth, async (req, res) => {
     .all(req.params.id);
 
   res.json({ problem, commitments });
+});
+
+// Edit a problem. Only the person who posted it can change it. Stamps
+// edited_at so the frontend can show an "edited" tag next to the post.
+router.put("/:id", requireAuth, async (req, res) => {
+  const { title, description, category } = req.body;
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+  if (problem.user_id !== req.userId) {
+    return res.status(403).json({ error: "You can only edit a problem you posted." });
+  }
+
+  const newTitle = String(title || "").trim();
+  const newDescription = String(description || "").trim();
+  if (!newTitle || !newDescription) {
+    return res.status(400).json({ error: "Title and description are required." });
+  }
+  const flagged = moderate(newTitle, newDescription);
+  if (flagged) return res.status(400).json({ error: flagged });
+  const cat = CATEGORIES.includes(category) ? category : problem.category;
+
+  await db
+    .prepare("UPDATE problems SET title = ?, description = ?, category = ?, edited_at = now() WHERE id = ?")
+    .run(newTitle, newDescription, cat, req.params.id);
+
+  res.json({ problem: await getFullProblem(req.params.id, req.userId) });
 });
 
 // Delete a problem. Only the person who posted it can remove it. Votes,
@@ -501,28 +759,93 @@ router.get("/:id/comments", optionalAuth, async (req, res) => {
 
   const rows = await db
     .prepare(
-      `SELECT c.id, c.body, c.created_at, c.user_id, c.startup_id,
-              u.name AS author_name, s.name AS startup_name, s.claimed AS startup_claimed
+      `SELECT c.id, c.body, c.created_at, c.edited_at, c.user_id, c.startup_id,
+              u.name AS author_name, s.name AS startup_name, s.claimed AS startup_claimed,
+              COALESCE(lc.c, 0) AS like_count,
+              CASE WHEN ml.comment_id IS NOT NULL THEN 1 ELSE 0 END AS liked
        FROM comments c
        JOIN users u ON u.id = c.user_id
        LEFT JOIN startups s ON s.id = c.startup_id
-       WHERE c.problem_id = ? ORDER BY c.created_at ASC, c.id ASC`
+       LEFT JOIN (SELECT comment_id, COUNT(*) AS c FROM comment_likes GROUP BY comment_id) lc
+              ON lc.comment_id = c.id
+       LEFT JOIN comment_likes ml ON ml.comment_id = c.id AND ml.user_id = ?
+       WHERE c.problem_id = ? AND (c.hidden = 0 OR c.user_id = ?)
+       ORDER BY c.created_at ASC, c.id ASC`
     )
-    .all(req.params.id);
+    .all(req.userId || -1, req.params.id, req.userId || -1);
 
   res.json({
     comments: rows.map((r) => ({
       id: r.id,
       body: r.body,
       created_at: r.created_at,
+      edited_at: r.edited_at,
       author_name: r.author_name,
       author_id: r.user_id,
       isMine: !!req.userId && r.user_id === req.userId,
+      likeCount: r.like_count,
+      liked: !!r.liked,
       startup: r.startup_id
         ? { id: r.startup_id, name: r.startup_name, claimed: !!r.startup_claimed }
         : null,
     })),
   });
+});
+
+// Edit a comment. Only the person who posted it can change it.
+router.put("/:id/comments/:commentId", requireAuth, async (req, res) => {
+  const comment = await db
+    .prepare("SELECT * FROM comments WHERE id = ? AND problem_id = ?")
+    .get(req.params.commentId, req.params.id);
+  if (!comment) return res.status(404).json({ error: "Comment not found." });
+  if (comment.user_id !== req.userId) {
+    return res.status(403).json({ error: "You can only edit a comment you posted." });
+  }
+
+  const body = String(req.body.body || "").trim();
+  if (!body) return res.status(400).json({ error: "Comment can't be empty." });
+  if (body.length > 2000) return res.status(400).json({ error: "Comment is too long (2000 characters max)." });
+  const flagged = moderate(body);
+  if (flagged) return res.status(400).json({ error: flagged });
+
+  await db.prepare("UPDATE comments SET body = ?, edited_at = now() WHERE id = ?").run(body, req.params.commentId);
+  res.json({ ok: true });
+});
+
+// Delete a comment. Only the person who posted it can remove it. Likes on
+// it are removed by the ON DELETE CASCADE foreign key.
+router.delete("/:id/comments/:commentId", requireAuth, async (req, res) => {
+  const comment = await db
+    .prepare("SELECT * FROM comments WHERE id = ? AND problem_id = ?")
+    .get(req.params.commentId, req.params.id);
+  if (!comment) return res.status(404).json({ error: "Comment not found." });
+  if (comment.user_id !== req.userId) {
+    return res.status(403).json({ error: "You can only delete a comment you posted." });
+  }
+  await db.prepare("DELETE FROM comments WHERE id = ?").run(req.params.commentId);
+  res.json({ ok: true });
+});
+
+// Toggle a like on a comment.
+router.post("/:id/comments/:commentId/like", requireAuth, async (req, res) => {
+  const comment = await db
+    .prepare("SELECT id FROM comments WHERE id = ? AND problem_id = ?")
+    .get(req.params.commentId, req.params.id);
+  if (!comment) return res.status(404).json({ error: "Comment not found." });
+
+  const existing = await db
+    .prepare("SELECT id FROM comment_likes WHERE comment_id = ? AND user_id = ?")
+    .get(req.params.commentId, req.userId);
+  if (existing) {
+    await db.prepare("DELETE FROM comment_likes WHERE id = ?").run(existing.id);
+  } else {
+    await db.prepare("INSERT INTO comment_likes (comment_id, user_id) VALUES (?, ?)").run(req.params.commentId, req.userId);
+  }
+  const { c: likeCount } = await db
+    .prepare("SELECT COUNT(*)::int AS c FROM comment_likes WHERE comment_id = ?")
+    .get(req.params.commentId);
+
+  res.json({ liked: !existing, likeCount });
 });
 
 router.post("/:id/comments", requireAuth, async (req, res) => {
