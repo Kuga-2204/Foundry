@@ -290,7 +290,7 @@ export default function PostProblem() {
                       {previews.map((p, i) => (
                         <div key={p.url} style={styles.previewThumb}>
                           {p.isVideo ? (
-                            <video src={p.url} style={styles.previewMedia} muted />
+                            <video src={p.url} style={styles.previewMedia} muted controls preload="metadata" />
                           ) : (
                             <img src={p.url} alt={p.name} style={styles.previewMedia} />
                           )}

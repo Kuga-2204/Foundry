@@ -198,7 +198,8 @@ button {
 .loading-logo {
   width: 44px;
   height: 44px;
-  object-fit: contain;
+  object-fit: cover;
+  border-radius: 999px;
   filter: drop-shadow(0 6px 12px rgba(15, 22, 38, 0.14));
 }
 
