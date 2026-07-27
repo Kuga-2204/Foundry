@@ -1,7 +1,45 @@
 import { Router } from "express";
 import db from "../db/index.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
+
+const CATEGORIES = [
+  "General",
+  "Health & Wellness",
+  "Productivity",
+  "Finance",
+  "Sustainability",
+  "Education",
+  "Home & Living",
+  "Transport",
+  "Community",
+  "Developer Tools",
+];
+
+router.get("/me/interests", requireAuth, async (req, res) => {
+  const rows = await db
+    .prepare("SELECT category FROM user_interests WHERE user_id = ? ORDER BY category")
+    .all(req.userId);
+  res.json({ interests: rows.map((row) => row.category) });
+});
+
+router.put("/me/interests", requireAuth, async (req, res) => {
+  const requested = Array.isArray(req.body.interests) ? req.body.interests : [];
+  const interests = [...new Set(requested.filter((category) => CATEGORIES.includes(category)))];
+  if (interests.length > 5) {
+    return res.status(400).json({ error: "Choose up to 5 interest categories." });
+  }
+
+  await db.prepare("DELETE FROM user_interests WHERE user_id = ?").run(req.userId);
+  for (const category of interests) {
+    await db
+      .prepare("INSERT INTO user_interests (user_id, category) VALUES (?, ?)")
+      .run(req.userId, category);
+  }
+
+  res.json({ interests });
+});
 
 // Public profile: builds credibility for the person behind a problem or
 // solution. Anonymous problems are excluded here just as they are everywhere

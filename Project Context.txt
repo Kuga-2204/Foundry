@@ -1,0 +1,6 @@
+Ranking now aims per 10-problem block for:
+6 from inferred user-interest categories
+4 from outside those categories
+5 high-demand problems from interest categories
+5 randomized discovery slots
+At least 6 open problems with no solutions, when enough exist

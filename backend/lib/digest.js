@@ -58,7 +58,7 @@ export async function buildDigestFor(userId) {
     sections
       .map((sec) => `${sec.heading}:\n` + sec.items.map((i) => `  - ${i.title}\n    ${i.url}`).join("\n"))
       .join("\n\n") +
-    `\n\nSee more: ${APP_URL}/problems?sort=trending\n`;
+    `\n\nSee more: ${APP_URL}/problems?sort=discover\n`;
 
   return { user, sections, text };
 }

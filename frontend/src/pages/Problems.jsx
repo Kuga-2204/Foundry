@@ -7,7 +7,7 @@ import WelcomeBanner from "../components/WelcomeBanner.jsx";
 import { optimisticVote } from "../voteUtils.js";
 
 export default function Problems() {
-  const { token } = useAuth();
+  const { user, token } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [problems, setProblems] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -15,8 +15,9 @@ export default function Problems() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [votingIds, setVotingIds] = useState(() => new Set());
+  const [followingIds, setFollowingIds] = useState(() => new Set());
 
-  const sort = searchParams.get("sort") || "trending";
+  const sort = searchParams.get("sort") || "discover";
   const category = searchParams.get("category") || "All";
   const status = searchParams.get("status") || "All";
   const mine = searchParams.get("mine") === "true";
@@ -84,19 +85,41 @@ export default function Problems() {
     }
   };
 
+  const handleFollow = async (id) => {
+    if (!user) {
+      setError("Log in to follow a problem.");
+      return;
+    }
+    if (followingIds.has(id)) return;
+    setError("");
+    setFollowingIds((prev) => new Set(prev).add(id));
+    try {
+      const data = await api.followProblem(id, token);
+      setProblems((prev) => prev.map((p) => (p.id === id ? data.problem : p)));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setFollowingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="wrap" style={styles.wrap}>
       {!mine && <WelcomeBanner />}
       <div style={styles.header}>
         <div>
           <h1 style={styles.h1}>
-            {mine ? "My problems" : sort === "trending" ? "Trending problems" : "Browse problems"}
+            {mine ? "My problems" : sort === "discover" || sort === "trending" ? "Discover problems" : "Browse problems"}
           </h1>
           <p style={styles.sub}>
             {mine
               ? "Problems you've posted."
-              : sort === "trending"
-                ? "The most active problems on Solvyard right now."
+              : sort === "discover" || sort === "trending"
+                ? "Problems ranked by your interests, demand, and unsolved opportunity."
                 : "Real problems from real people. Vote if you have it too, follow to hear when it gets solved."}
           </p>
         </div>
@@ -114,8 +137,8 @@ export default function Problems() {
         </form>
 
         <select value={sort} onChange={(e) => updateParam("sort", e.target.value)} style={styles.select}>
+          <option value="discover">Discover</option>
           <option value="top">Top voted</option>
-          <option value="trending">Trending</option>
           <option value="new">Newest</option>
           <option value="followed">Most followed</option>
           <option value="unsolved">Unsolved</option>
@@ -153,7 +176,9 @@ export default function Problems() {
             key={p.id}
             problem={p}
             onVote={handleVote}
+            onFollow={handleFollow}
             voting={votingIds.has(p.id)}
+            following={followingIds.has(p.id)}
           />
         ))
       )}
