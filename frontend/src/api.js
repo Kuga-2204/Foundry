@@ -33,6 +33,8 @@ export const api = {
   updateUserInterests: (interests, token) =>
     request("/users/me/interests", { method: "PUT", body: { interests }, token }),
   categories: () => request("/problems/categories"),
+  assistProblem: (payload, token) =>
+    request("/problems/assist", { method: "POST", body: payload, token }),
   listProblems: (params, token) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/problems${qs ? `?${qs}` : ""}`, { token });

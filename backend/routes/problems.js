@@ -1,7 +1,7 @@
 import { Router } from "express";
 import db from "../db/index.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import { matchStartups, matchSimilarProblems } from "../lib/match.js";
+import { matchStartups, matchSimilarProblems, tokenize } from "../lib/match.js";
 import { notify, notifyFollowers, follow } from "../lib/notify.js";
 import {
   anonymousHandleCandidates,
@@ -27,6 +27,75 @@ const CATEGORIES = [
   "Community",
   "Developer Tools",
 ];
+
+const CATEGORY_HINTS = {
+  "Health & Wellness": ["health", "doctor", "fitness", "sleep", "mental", "medicine", "clinic", "therapy", "diet", "pain"],
+  Productivity: ["productivity", "task", "todo", "calendar", "schedule", "meeting", "focus", "workflow", "organize", "reminder"],
+  Finance: ["money", "payment", "pay", "rent", "bill", "budget", "bank", "expense", "invoice", "split", "subscription"],
+  Sustainability: ["waste", "recycle", "carbon", "sustainable", "energy", "plastic", "green", "climate"],
+  Education: ["school", "course", "class", "study", "student", "exam", "learn", "lesson", "teacher", "university"],
+  "Home & Living": ["home", "roommate", "flatmate", "house", "rent", "kitchen", "apartment", "chores", "cleaning"],
+  Transport: ["transport", "bus", "train", "ride", "parking", "commute", "traffic", "delivery", "route"],
+  Community: ["community", "neighbour", "neighbor", "group", "event", "volunteer", "local", "people"],
+  "Developer Tools": ["developer", "code", "api", "github", "deploy", "debug", "database", "server", "frontend", "backend", "bug"],
+};
+
+function firstSentence(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+/)[0]
+    .replace(/[.!?]+$/, "")
+    .trim();
+}
+
+function titleFromText(text) {
+  const sentence = firstSentence(text);
+  if (!sentence) return "";
+  const cleaned = sentence
+    .replace(/^(i am|i'm|im|i keep|we keep|there is|there are|the problem is)\s+/i, "")
+    .trim();
+  if (cleaned.length <= 76) return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  const cut = cleaned.slice(0, 76);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 38 ? cut.slice(0, lastSpace) : cut).trim() + "...";
+}
+
+function inferCategory(text, fallback = "General") {
+  const tokens = new Set(tokenize(text));
+  let best = { category: CATEGORIES.includes(fallback) ? fallback : "General", score: 0 };
+  for (const [category, hints] of Object.entries(CATEGORY_HINTS)) {
+    let score = 0;
+    for (const hint of hints) if (tokens.has(hint)) score += 1;
+    if (score > best.score) best = { category, score };
+  }
+  return best;
+}
+
+function assistedDescription(text) {
+  const raw = String(text || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  if (raw.length >= 180) return raw;
+  const sentence = firstSentence(raw) || raw;
+  return sentence + ". This is frustrating because it costs time, creates repeated manual work, and does not have an obvious easy fix. I would use a solution that makes this simpler, faster, and reliable without adding more coordination.";
+}
+
+function buildProblemAssist({ title, description, category }) {
+  const text = `${title || ""} ${description || ""}`.trim();
+  const inferred = inferCategory(text, category);
+  const suggestedTitle = title?.trim() || titleFromText(description) || "Problem worth solving";
+  return {
+    title: suggestedTitle,
+    description: assistedDescription(description),
+    category: inferred.category,
+    confidence: Math.min(0.95, 0.55 + inferred.score * 0.12),
+    reasons: [
+      inferred.score > 0 ? "Matched category signals for " + inferred.category + "." : "Kept category broad because the text is still general.",
+      suggestedTitle !== title ? "Suggested a short title from the first clear complaint." : "Kept your existing title.",
+      description && description.length < 180 ? "Expanded the description with impact and desired outcome." : "Kept your description close to the original.",
+    ],
+  };
+}
 
 // Attach vote/solution/follower/comment/media counts to a batch of problems.
 //
@@ -248,6 +317,34 @@ function attachTrendScores(problems) {
 
 router.get("/categories", (_req, res) => {
   res.json({ categories: CATEGORIES });
+});
+
+router.post("/assist", optionalAuth, async (req, res) => {
+  const description = String(req.body.description || req.body.text || "").trim();
+  const title = String(req.body.title || "").trim();
+  const category = String(req.body.category || "General").trim();
+  const text = `${title} ${description}`.trim();
+
+  if (text.length < 8) {
+    return res.status(400).json({ error: "Write a little more before using AI assist." });
+  }
+
+  const assist = buildProblemAssist({ title, description, category });
+  const { strong, adjacent } = await matchStartups(`${assist.title} ${assist.description}`, { limit: 4 });
+  const shape = (m) => ({
+    ...m.startup,
+    claimed: !!m.startup.claimed,
+    matchScore: m.score,
+    matchedTerms: m.matchedTerms,
+  });
+
+  res.json({
+    assist,
+    startups: {
+      strong: strong.map(shape),
+      adjacent: adjacent.map(shape),
+    },
+  });
 });
 
 router.get("/media", async (req, res) => {
