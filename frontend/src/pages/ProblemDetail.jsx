@@ -7,10 +7,12 @@ import StatusBadge from "../components/StatusBadge.jsx";
 import StartupCard from "../components/StartupCard.jsx";
 import ShareButton from "../components/ShareButton.jsx";
 import ReportButton from "../components/ReportButton.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 import PostMenu from "../components/PostMenu.jsx";
 import { StarsDisplay, StarsInput } from "../components/Stars.jsx";
 import { formatDate, OUTCOME_LABELS, OUTCOME_COLORS } from "../utils.js";
 import { optimisticVote } from "../voteUtils.js";
+import { problemMediaUrl } from "../media.js";
 
 export default function ProblemDetail() {
   const { id } = useParams();
@@ -154,7 +156,7 @@ export default function ProblemDetail() {
     setCommitments(probData.commitments || []);
   };
 
-  if (loading) return <div className="wrap" style={{ padding: 48 }}>Loading…</div>;
+  if (loading) return <LoadingScreen label="Searching problem details" />;
   if (error && !problem)
     return (
       <div className="wrap" style={{ padding: 48 }}>
@@ -369,19 +371,21 @@ function MediaGallery({ media }) {
   return (
     <>
       <div style={styles.gallery}>
-        {media.map((m) =>
-          m.kind === "video" ? (
-            <video key={m.id} src={m.file} controls preload="metadata" style={styles.galleryVideo} />
+        {media.map((m) => {
+          const src = problemMediaUrl(m.file);
+          return m.kind === "video" ? (
+            <video key={m.id} src={src} controls preload="metadata" style={styles.galleryVideo} />
           ) : (
             <img
               key={m.id}
-              src={m.file}
+              src={src}
               alt="Problem attachment"
               style={styles.galleryImage}
-              onClick={() => setOpen(m.file)}
+              onClick={() => setOpen(src)}
+              loading="lazy"
             />
-          )
-        )}
+          );
+        })}
       </div>
       {open && (
         <div style={styles.lightbox} onClick={() => setOpen(null)}>

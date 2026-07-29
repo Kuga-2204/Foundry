@@ -29,7 +29,9 @@ export const api = {
   userProfile: (id) => request(`/users/${id}`),
   report: (target_type, target_id, reason, token) =>
     request("/reports", { method: "POST", body: { target_type, target_id, reason }, token }),
-
+  userInterests: (token) => request("/users/me/interests", { token }),
+  updateUserInterests: (interests, token) =>
+    request("/users/me/interests", { method: "PUT", body: { interests }, token }),
   categories: () => request("/problems/categories"),
   listProblems: (params, token) => {
     const qs = new URLSearchParams(params).toString();
@@ -39,6 +41,7 @@ export const api = {
   createProblem: (payload, token) => request("/problems", { method: "POST", body: payload, token }),
   updateProblem: (id, payload, token) => request(`/problems/${id}`, { method: "PUT", body: payload, token }),
   deleteProblem: (id, token) => request(`/problems/${id}`, { method: "DELETE", token }),
+  problemDashboard: (token) => request("/problems/dashboard", { token }),
   vote: (id, type, token) => request(`/problems/${id}/vote`, { method: "POST", body: { type }, token }),
   followProblem: (id, token) => request(`/problems/${id}/follow`, { method: "POST", token }),
   // Token is optional but sent when present: it lets the backend credit the

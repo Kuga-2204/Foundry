@@ -160,6 +160,14 @@ CREATE TABLE IF NOT EXISTS problem_followers (
   UNIQUE(problem_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS user_interests (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(user_id, category)
+);
+
 CREATE TABLE IF NOT EXISTS commitments (
   id SERIAL PRIMARY KEY,
   problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
@@ -274,6 +282,7 @@ CREATE INDEX IF NOT EXISTS idx_votes_problem       ON votes(problem_id);
 CREATE INDEX IF NOT EXISTS idx_votes_user          ON votes(user_id);
 CREATE INDEX IF NOT EXISTS idx_followers_problem   ON problem_followers(problem_id);
 CREATE INDEX IF NOT EXISTS idx_followers_user      ON problem_followers(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_interests_user ON user_interests(user_id);
 CREATE INDEX IF NOT EXISTS idx_solutions_problem   ON solutions(problem_id);
 CREATE INDEX IF NOT EXISTS idx_solutions_startup   ON solutions(startup_id);
 CREATE INDEX IF NOT EXISTS idx_comments_problem    ON comments(problem_id);

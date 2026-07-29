@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import StartupCard from "../components/StartupCard.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 
 export default function Startups() {
   const [startups, setStartups] = useState([]);
@@ -75,7 +76,7 @@ export default function Startups() {
       {error && <div className="error-banner">{error}</div>}
 
       {loading ? (
-        <p style={styles.empty}>Loading…</p>
+        <LoadingScreen label="Searching startups" />
       ) : startups.length === 0 ? (
         <div style={styles.emptyState}>
           <p style={{ fontWeight: 600, marginBottom: 6 }}>No startups listed yet.</p>

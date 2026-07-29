@@ -32,8 +32,8 @@ export default function WelcomeBanner() {
         complaint sounds, the better the match.
       </p>
       <div style={styles.actions}>
-        <Link to="/problems?sort=trending" className="btn btn-sm" onClick={close}>
-          See what's trending
+        <Link to="/problems?sort=discover" className="btn btn-sm" onClick={close}>
+          Discover problems
         </Link>
         <Link to="/post" className="btn btn-sm btn-primary" onClick={close}>
           Describe your problem →

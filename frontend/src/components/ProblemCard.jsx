@@ -1,9 +1,17 @@
 import { Link } from "react-router-dom";
 import VoteControl from "./VoteControl.jsx";
+import ShareButton from "./ShareButton.jsx";
 import StatusBadge from "./StatusBadge.jsx";
+import NoSolutionBadge from "./NoSolutionBadge.jsx";
 import { formatDate } from "../utils.js";
 
-export default function ProblemCard({ problem, onVote, voting = false }) {
+export default function ProblemCard({
+  problem,
+  onVote,
+  onFollow,
+  voting = false,
+  following = false,
+}) {
   return (
     <div className="card" style={styles.card}>
       <VoteControl
@@ -17,8 +25,15 @@ export default function ProblemCard({ problem, onVote, voting = false }) {
           <span style={styles.badges}>
             <span style={styles.category}>{problem.category}</span>
             <StatusBadge status={problem.status} />
+            {problem.solutionCount === 0 && <NoSolutionBadge />}
             {problem.trendScore > 5 && (
-              <span style={{ ...styles.category, background: "var(--spark-soft)", color: "var(--ink)" }}>
+              <span
+                style={{
+                  ...styles.category,
+                  background: "var(--spark-soft)",
+                  color: "var(--ink)",
+                }}
+              >
                 🔥 Trending
               </span>
             )}
@@ -34,23 +49,50 @@ export default function ProblemCard({ problem, onVote, voting = false }) {
         <p style={styles.desc}>{problem.description}</p>
 
         <div style={styles.footer}>
-          <span style={styles.footerItem}>by {problem.author_name}</span>
-          <span style={styles.footerItem}>{problem.followerCount} following</span>
-          <span style={{ ...styles.footerItem, ...(problem.solutionCount > 0 ? styles.solved : {}) }}>
-            {problem.solutionCount === 0
-              ? "No solutions yet"
-              : `${problem.solutionCount} solution${problem.solutionCount > 1 ? "s" : ""}`}
-          </span>
-          {problem.commentCount > 0 && (
+          <div style={styles.footerItems}>
+            <span style={styles.footerItem}>by {problem.author_name}</span>
             <span style={styles.footerItem}>
-              {problem.commentCount} comment{problem.commentCount > 1 ? "s" : ""}
+              {problem.followerCount} following
             </span>
-          )}
-          {problem.mediaCount > 0 && (
-            <span style={styles.footerItem}>
-              {problem.mediaCount} attachment{problem.mediaCount > 1 ? "s" : ""}
+            <span
+              style={{
+                ...styles.footerItem,
+                ...(problem.solutionCount > 0 ? styles.solved : {}),
+              }}
+            >
+              {problem.solutionCount === 0
+                ? "No solutions yet"
+                : `${problem.solutionCount} solution${problem.solutionCount > 1 ? "s" : ""}`}
             </span>
-          )}
+            {problem.commentCount > 0 && (
+              <span style={styles.footerItem}>
+                {problem.commentCount} comment
+                {problem.commentCount > 1 ? "s" : ""}
+              </span>
+            )}
+            {problem.mediaCount > 0 && (
+              <span style={styles.footerItem}>
+                {problem.mediaCount} attachment
+                {problem.mediaCount > 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+
+          <div style={styles.actions}>
+            <button
+              className="btn btn-sm"
+              type="button"
+              onClick={() => onFollow(problem.id)}
+              disabled={following}
+            >
+              {following
+                ? "Saving..."
+                : problem.isFollowing
+                  ? "Following ✓"
+                  : "Follow for updates"}
+            </button>
+            <ShareButton problem={problem} />
+          </div>
         </div>
       </div>
     </div>
@@ -64,7 +106,13 @@ const styles = {
     padding: 20,
     marginBottom: 14,
   },
-  metaRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10 },
+  metaRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 10,
+  },
   badges: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
   category: {
     fontFamily: "var(--mono)",
@@ -95,7 +143,27 @@ const styles = {
     overflow: "hidden",
     marginBottom: 12,
   },
-  footer: { display: "flex", gap: 16, fontSize: 12.5, color: "var(--text-dim)" },
+  footer: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 14,
+    fontSize: 12.5,
+    color: "var(--text-dim)",
+    flexWrap: "wrap",
+  },
+  footerItems: {
+    display: "flex",
+    gap: 16,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  actions: {
+    display: "flex",
+    gap: 10,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
   footerItem: { display: "inline-flex", alignItems: "center" },
   solved: { color: "var(--build)", fontWeight: 600 },
 };

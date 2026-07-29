@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api.js";
 import StatusBadge from "../components/StatusBadge.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 import { formatDate } from "../utils.js";
 
 export default function UserProfile() {
@@ -16,7 +17,7 @@ export default function UserProfile() {
   }, [id]);
 
   if (error) return <div className="wrap" style={{ padding: 48 }}><div className="error-banner">{error}</div></div>;
-  if (!data) return <div className="wrap" style={{ padding: 48 }}>Loading…</div>;
+  if (!data) return <LoadingScreen label="Searching profile" />;
 
   const { user, stats, problems, solutions, startups } = data;
 
