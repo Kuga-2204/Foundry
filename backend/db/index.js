@@ -242,6 +242,16 @@ ALTER TABLE comments ADD COLUMN IF NOT EXISTS hidden INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE problems ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 
+-- Cached rulings from the matching agent (lib/agent.js). Keyword recall runs
+-- on every keystroke and stays uncached; the agent pass is one model call per
+-- problem, so its verdicts are stored and reused until they go stale or the
+-- problem is edited.
+CREATE TABLE IF NOT EXISTS problem_match_verdicts (
+  problem_id INTEGER PRIMARY KEY REFERENCES problems(id) ON DELETE CASCADE,
+  verdicts TEXT NOT NULL,
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS comment_likes (
   id SERIAL PRIMARY KEY,
   comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,

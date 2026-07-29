@@ -12,6 +12,7 @@ import {
 import { upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
+import { agentEnabled, judgeMatches, VERDICT_TTL_MS } from "../lib/agent.js";
 
 const router = Router();
 
@@ -346,6 +347,8 @@ router.put("/:id", requireAuth, async (req, res) => {
   await db
     .prepare("UPDATE problems SET title = ?, description = ?, category = ?, edited_at = now() WHERE id = ?")
     .run(newTitle, newDescription, cat, req.params.id);
+  // The agent ruled on the old wording; those verdicts no longer apply.
+  await db.prepare("DELETE FROM problem_match_verdicts WHERE problem_id = ?").run(req.params.id);
 
   res.json({ problem: await getFullProblem(req.params.id, req.userId) });
 });
@@ -363,10 +366,54 @@ router.delete("/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Startups that likely already solve this problem.
-router.get("/:id/matches", async (req, res) => {
-  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
-  if (!problem) return res.status(404).json({ error: "Problem not found." });
+// One model call per problem is affordable; one per page view is not. Verdicts
+// are cached until they age out or the poster edits the problem out from under
+// them. A cache miss that the agent can't serve just falls through to keywords.
+async function verdictsFor(problem, candidates) {
+  const cached = await db
+    .prepare("SELECT verdicts, computed_at FROM problem_match_verdicts WHERE problem_id = ?")
+    .get(problem.id);
+  if (cached && Date.now() - Date.parse(cached.computed_at) < VERDICT_TTL_MS) {
+    try {
+      return new Map(JSON.parse(cached.verdicts));
+    } catch {
+      // Unreadable cache row: fall through and recompute.
+    }
+  }
+
+  const ids = candidates.map((m) => m.startup.id);
+  const rows = await db
+    .prepare("SELECT startup_id, statement FROM startup_statements WHERE startup_id = ANY(?::int[])")
+    .all(ids);
+  const statements = new Map();
+  for (const r of rows) {
+    if (!statements.has(r.startup_id)) statements.set(r.startup_id, []);
+    statements.get(r.startup_id).push(r.statement);
+  }
+
+  const verdicts = await judgeMatches(
+    problem,
+    candidates.map((m) => ({ ...m.startup, statements: statements.get(m.startup.id) || [] }))
+  );
+  if (!verdicts) return null;
+
+  await db
+    .prepare(
+      `INSERT INTO problem_match_verdicts (problem_id, verdicts, computed_at)
+       VALUES (?, ?, now())
+       ON CONFLICT (problem_id) DO UPDATE SET verdicts = EXCLUDED.verdicts, computed_at = now()
+       RETURNING problem_id`
+    )
+    .run(problem.id, JSON.stringify([...verdicts]));
+
+  return verdicts;
+}
+
+// Startups that likely already solve this problem. Keyword recall builds the
+// shortlist; the matching agent then rules on which of those actually solve it
+// and supplies the reason shown on the card. Without the agent this returns
+// exactly what keyword matching alone returned.
+async function matchesForProblem(problem) {
   const { strong, adjacent } = await matchStartups(`${problem.title} ${problem.description}`);
   const shape = (m) => ({
     ...m.startup,
@@ -374,7 +421,28 @@ router.get("/:id/matches", async (req, res) => {
     matchScore: m.score,
     matchedTerms: m.matchedTerms,
   });
-  res.json({ strong: strong.map(shape), adjacent: adjacent.map(shape) });
+
+  const candidates = [...strong, ...adjacent];
+  const keywordOnly = { strong: strong.map(shape), adjacent: adjacent.map(shape) };
+  if (!agentEnabled() || candidates.length === 0) return keywordOnly;
+
+  const verdicts = await verdictsFor(problem, candidates);
+  if (!verdicts) return keywordOnly;
+
+  const judged = { strong: [], adjacent: [], judged: true };
+  for (const m of candidates) {
+    const v = verdicts.get(m.startup.id);
+    if (!v || v.verdict === "unrelated") continue;
+    const card = { ...shape(m), whyItMatches: v.reason };
+    judged[v.verdict === "solves" ? "strong" : "adjacent"].push(card);
+  }
+  return judged;
+}
+
+router.get("/:id/matches", async (req, res) => {
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+  res.json(await matchesForProblem(problem));
 });
 
 // Vote: 1 (up) or -1 (down). Same type again removes the vote (toggle).
