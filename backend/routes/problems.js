@@ -12,7 +12,7 @@ import {
 import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
-import { agentEnabled, judgeMatches, VERDICT_TTL_MS } from "../lib/agent.js";
+import { agentEnabled, judgeMatches, searchWeb, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
 
 const router = Router();
 
@@ -599,8 +599,9 @@ router.put("/:id", requireAuth, async (req, res) => {
   await db
     .prepare("UPDATE problems SET title = ?, description = ?, category = ?, edited_at = now() WHERE id = ?")
     .run(newTitle, newDescription, cat, req.params.id);
-  // The agent ruled on the old wording; those verdicts no longer apply.
+  // The agent ruled on the old wording; those results no longer apply.
   await db.prepare("DELETE FROM problem_match_verdicts WHERE problem_id = ?").run(req.params.id);
+  await db.prepare("DELETE FROM problem_web_matches WHERE problem_id = ?").run(req.params.id);
 
   res.json({ problem: await getFullProblem(req.params.id, req.userId) });
 });
@@ -695,6 +696,50 @@ router.get("/:id/matches", async (req, res) => {
   const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
   if (!problem) return res.status(404).json({ error: "Problem not found." });
   res.json(await matchesForProblem(problem));
+});
+
+// Products from the open web, for problems the directory cannot answer. Kept
+// on its own route because a live web search takes far longer than a page
+// load should: /matches stays fast and this fills in behind it.
+//
+// These are links, not listings. Nothing here can commit to building, ship to
+// followers, or be reviewed, so the frontend keeps them in their own section.
+router.get("/:id/web-matches", async (req, res) => {
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+  if (!agentEnabled()) return res.json({ results: [], searched: false });
+
+  const cached = await db
+    .prepare("SELECT results, computed_at FROM problem_web_matches WHERE problem_id = ?")
+    .get(problem.id);
+  if (cached && Date.now() - Date.parse(cached.computed_at) < WEB_TTL_MS) {
+    try {
+      return res.json({ results: JSON.parse(cached.results), searched: true, cached: true });
+    } catch {
+      // Unreadable cache row: fall through and search again.
+    }
+  }
+
+  // The web is the fallback, not a parallel answer. If Solvyard can answer
+  // this itself, spend nothing here.
+  const directory = await matchesForProblem(problem);
+  if (directory.strong.length > 0 || directory.adjacent.length > 0) {
+    return res.json({ results: [], searched: false, reason: "directory-has-matches" });
+  }
+
+  const results = await searchWeb(problem);
+  if (!results) return res.json({ results: [], searched: false });
+
+  await db
+    .prepare(
+      `INSERT INTO problem_web_matches (problem_id, results, computed_at)
+       VALUES (?, ?, now())
+       ON CONFLICT (problem_id) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
+       RETURNING problem_id`
+    )
+    .run(problem.id, JSON.stringify(results));
+
+  res.json({ results, searched: true });
 });
 
 // Vote: 1 (up) or -1 (down). Same type again removes the vote (toggle).

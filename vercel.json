@@ -15,7 +15,8 @@
     "backend": {
       "root": "backend",
       "framework": "express",
-      "entrypoint": "server.js"
+      "entrypoint": "server.js",
+      "maxDuration": 300
     }
   },
   "rewrites": [
