@@ -112,14 +112,14 @@ export default function PostProblem() {
   }, [text, token]);
 
   const runAssist = async () => {
-    if (text.length < 8) {
-      setAssistError("Write a little more, then AI assist can help fill the post.");
+    if (form.description.trim().length < 8) {
+      setAssistError("Write a little more in the description, then AI assist can fill the rest.");
       return;
     }
     setAssistBusy(true);
     setAssistError("");
     try {
-      const data = await api.assistProblem(form, token);
+      const data = await api.assistProblem({ description: form.description }, token);
       setAssist(data);
       if (data.startups) {
         setMatches(data.startups);
@@ -275,13 +275,13 @@ export default function PostProblem() {
                   type="button"
                   className="btn btn-sm"
                   onClick={runAssist}
-                  disabled={assistBusy || text.length < 8}
+                  disabled={assistBusy || form.description.trim().length < 8}
                 >
                   {assistBusy ? "Thinking..." : "Autofill problem"}
                 </button>
               </div>
               <p style={styles.assistHint}>
-                Turn a rough complaint into a cleaner title, category, and problem description.
+                Write only the description. AI assist will fix grammar and spelling, then fill the title and category.
               </p>
               {assistError && <p style={styles.assistError}>{assistError}</p>}
               {assist?.assist && (

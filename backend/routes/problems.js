@@ -50,7 +50,7 @@ function firstSentence(text) {
 }
 
 function titleFromText(text) {
-  const sentence = firstSentence(text);
+  const sentence = firstSentence(polishDescription(text));
   if (!sentence) return "";
   const cleaned = sentence
     .replace(/^(i am|i'm|im|i keep|we keep|there is|there are|the problem is)\s+/i, "")
@@ -72,27 +72,82 @@ function inferCategory(text, fallback = "General") {
   return best;
 }
 
+function polishDescription(text) {
+  let cleaned = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .trim();
+
+  if (!cleaned) return "";
+
+  const corrections = [
+    [/\bim\b/gi, "I'm"],
+    [/\bi m\b/gi, "I'm"],
+    [/\bi'm\b/gi, "I'm"],
+    [/\bi\b/g, "I"],
+    [/\bdont\b/gi, "don't"],
+    [/\bdoesnt\b/gi, "doesn't"],
+    [/\bdidnt\b/gi, "didn't"],
+    [/\bcant\b/gi, "can't"],
+    [/\bcannot\b/gi, "can't"],
+    [/\bwont\b/gi, "won't"],
+    [/\bwouldnt\b/gi, "wouldn't"],
+    [/\bcouldnt\b/gi, "couldn't"],
+    [/\bshouldnt\b/gi, "shouldn't"],
+    [/\bive\b/gi, "I've"],
+    [/\bid\b/gi, "I'd"],
+    [/\bill\b/gi, "I'll"],
+    [/\bits\b/gi, "it's"],
+    [/\bthats\b/gi, "that's"],
+    [/\bwhats\b/gi, "what's"],
+    [/\btheres\b/gi, "there's"],
+    [/\btheyre\b/gi, "they're"],
+    [/\byoure\b/gi, "you're"],
+    [/\bteh\b/gi, "the"],
+    [/\brecieve\b/gi, "receive"],
+    [/\bseperate\b/gi, "separate"],
+    [/\balot\b/gi, "a lot"],
+    [/\bbecuase\b/gi, "because"],
+    [/\bdefinately\b/gi, "definitely"],
+    [/\bacheive\b/gi, "achieve"],
+    [/\boccured\b/gi, "occurred"],
+    [/\bwierd\b/gi, "weird"],
+    [/\bcalender\b/gi, "calendar"],
+    [/\bgrammer\b/gi, "grammar"],
+    [/\bgrmmar\b/gi, "grammar"],
+    [/\beverytime\b/gi, "every time"],
+  ];
+
+  for (const [pattern, replacement] of corrections) {
+    cleaned = cleaned.replace(pattern, replacement);
+  }
+
+  cleaned = cleaned.replace(/(^|[.!?]\s+)([a-z])/g, (_match, prefix, letter) => prefix + letter.toUpperCase());
+  if (!/[.!?]$/.test(cleaned)) cleaned += ".";
+  return cleaned;
+}
+
 function assistedDescription(text) {
-  const raw = String(text || "").replace(/\s+/g, " ").trim();
+  const raw = polishDescription(text);
   if (!raw) return "";
   if (raw.length >= 180) return raw;
   const sentence = firstSentence(raw) || raw;
   return sentence + ". This is frustrating because it costs time, creates repeated manual work, and does not have an obvious easy fix. I would use a solution that makes this simpler, faster, and reliable without adding more coordination.";
 }
 
-function buildProblemAssist({ title, description, category }) {
-  const text = `${title || ""} ${description || ""}`.trim();
-  const inferred = inferCategory(text, category);
-  const suggestedTitle = title?.trim() || titleFromText(description) || "Problem worth solving";
+function buildProblemAssist({ description }) {
+  const cleanDescription = assistedDescription(description);
+  const inferred = inferCategory(cleanDescription, "General");
+  const suggestedTitle = titleFromText(cleanDescription) || "Problem worth solving";
   return {
     title: suggestedTitle,
-    description: assistedDescription(description),
+    description: cleanDescription,
     category: inferred.category,
     confidence: Math.min(0.95, 0.55 + inferred.score * 0.12),
     reasons: [
       inferred.score > 0 ? "Matched category signals for " + inferred.category + "." : "Kept category broad because the text is still general.",
-      suggestedTitle !== title ? "Suggested a short title from the first clear complaint." : "Kept your existing title.",
-      description && description.length < 180 ? "Expanded the description with impact and desired outcome." : "Kept your description close to the original.",
+      "Suggested a short title from the cleaned description.",
+      description && description.length < 180 ? "Cleaned grammar and expanded the description with impact and desired outcome." : "Corrected grammar and spelling while keeping your description close to the original.",
     ],
   };
 }
@@ -321,15 +376,13 @@ router.get("/categories", (_req, res) => {
 
 router.post("/assist", optionalAuth, async (req, res) => {
   const description = String(req.body.description || req.body.text || "").trim();
-  const title = String(req.body.title || "").trim();
-  const category = String(req.body.category || "General").trim();
-  const text = `${title} ${description}`.trim();
+  const text = description;
 
   if (text.length < 8) {
     return res.status(400).json({ error: "Write a little more before using AI assist." });
   }
 
-  const assist = buildProblemAssist({ title, description, category });
+  const assist = buildProblemAssist({ description });
   const { strong, adjacent } = await matchStartups(`${assist.title} ${assist.description}`, { limit: 4 });
   const shape = (m) => ({
     ...m.startup,
