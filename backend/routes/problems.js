@@ -105,6 +105,7 @@ function polishDescription(text) {
     [/\byoure\b/gi, "you're"],
     [/\bteh\b/gi, "the"],
     [/\brecieve\b/gi, "receive"],
+    [/\bforgeting\b/gi, "forgetting"],
     [/\bseperate\b/gi, "separate"],
     [/\balot\b/gi, "a lot"],
     [/\bbecuase\b/gi, "because"],
