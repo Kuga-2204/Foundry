@@ -49,16 +49,62 @@ function firstSentence(text) {
     .trim();
 }
 
+function compactTitle(text) {
+  const cleaned = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/[.!?]+$/g, "")
+    .trim();
+  if (!cleaned) return "";
+  if (cleaned.length <= 68) return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  const cut = cleaned.slice(0, 68);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 38 ? cut.slice(0, lastSpace) : cut).trim();
+}
+
+function simplifyCause(text) {
+  const cause = String(text || "").toLowerCase();
+  if (/chat|message|whatsapp|slack|discord|calendar|meeting|deadline/.test(cause)) {
+    if (/separate|different|scattered|shared|everyone|change/.test(cause)) return "scattered chat and calendar updates";
+    return "messy communication channels";
+  }
+  if (/roommate|flatmate|rent|bill|expense|money|split/.test(cause)) return "unclear shared expenses";
+  if (/schedule|task|todo|reminder|organize|workflow/.test(cause)) return "manual coordination";
+  if (/bug|code|api|deploy|server|frontend|backend/.test(cause)) return "unreliable tooling";
+  return cause.replace(/^(everyone|people|users|we|they)\s+/i, "").slice(0, 48).trim();
+}
+
+function simplifyPain(text) {
+  let pain = String(text || "").trim();
+  pain = pain
+    .replace(/^(i am|i'm|im|i|we|users|people)\s+/i, "")
+    .replace(/^(always|constantly|keep|keeps|having|have|has|struggle to|struggling to|can't|cannot|not able to)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  pain = pain
+    .replace(/forgetting\s+(project\s+)?deadlines?\s+and\s+meetings?/i, "missed project deadlines")
+    .replace(/forgetting\s+deadlines?/i, "missed deadlines")
+    .replace(/not able to sit properly/i, "trouble sitting comfortably")
+    .replace(/sit properly/i, "sitting comfortably")
+    .replace(/splitting rent/i, "splitting rent fairly")
+    .replace(/turns? into an argument/i, "causes arguments");
+
+  return pain;
+}
+
 function titleFromText(text) {
   const sentence = firstSentence(polishDescription(text));
   if (!sentence) return "";
-  const cleaned = sentence
-    .replace(/^(i am|i'm|im|i keep|we keep|there is|there are|the problem is)\s+/i, "")
+  const withoutIntro = sentence
+    .replace(/^(the problem is|there is|there are)\s+/i, "")
     .trim();
-  if (cleaned.length <= 76) return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-  const cut = cleaned.slice(0, 76);
-  const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > 38 ? cut.slice(0, lastSpace) : cut).trim() + "...";
+  const parts = withoutIntro.split(/\s+because\s+/i);
+  if (parts.length >= 2) {
+    const pain = simplifyPain(parts[0]);
+    const cause = simplifyCause(parts.slice(1).join(" because "));
+    if (pain && cause) return compactTitle(`${pain} from ${cause}`);
+  }
+  return compactTitle(simplifyPain(withoutIntro));
 }
 
 function inferCategory(text, fallback = "General") {
@@ -371,6 +417,21 @@ function attachTrendScores(problems) {
   }
 }
 
+async function categoryFallbackStartups(category, excludeIds = new Set(), limit = 3) {
+  if (!CATEGORIES.includes(category)) return [];
+  const rows = await db
+    .prepare("SELECT * FROM startups WHERE category = ? ORDER BY claimed DESC, name ASC LIMIT ?")
+    .all(category, limit + excludeIds.size);
+  return rows
+    .filter((startup) => !excludeIds.has(startup.id))
+    .slice(0, limit)
+    .map((startup) => ({
+      startup,
+      score: 1,
+      matchedTerms: [category.toLowerCase()],
+      statementHits: 0,
+    }));
+}
 router.get("/categories", (_req, res) => {
   res.json({ categories: CATEGORIES });
 });
@@ -384,7 +445,13 @@ router.post("/assist", optionalAuth, async (req, res) => {
   }
 
   const assist = buildProblemAssist({ description });
-  const { strong, adjacent } = await matchStartups(`${assist.title} ${assist.description}`, { limit: 4 });
+  const startupSearchText = `${assist.title} ${polishDescription(description)}`;
+  let { strong, adjacent } = await matchStartups(startupSearchText, { limit: 4 });
+  if (strong.length + adjacent.length < 3) {
+    const usedStartupIds = new Set([...strong, ...adjacent].map((m) => m.startup.id));
+    const fallback = await categoryFallbackStartups(assist.category, usedStartupIds, 3 - strong.length - adjacent.length);
+    adjacent = adjacent.concat(fallback);
+  }
   const shape = (m) => ({
     ...m.startup,
     claimed: !!m.startup.claimed,

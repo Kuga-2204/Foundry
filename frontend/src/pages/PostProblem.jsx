@@ -19,6 +19,17 @@ function deriveTitle(body) {
   return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trim() + "…";
 }
 
+function coreComplaint(body) {
+  return String(body || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+/)[0]
+    .trim();
+}
+
+function matchableProblemText(form) {
+  return `${form.title || ""} ${coreComplaint(form.description)}`.trim();
+}
 // Post a problem. Quick by default: one complaint box, with title/category/
 // media tucked under "more options". Two live checks run while typing (does a
 // startup already solve this; is it already listed). The draft autosaves, and
@@ -89,7 +100,7 @@ export default function PostProblem() {
     }
   }, [form, anonymous, anonymousHandle]);
 
-  const text = `${form.title} ${form.description}`.trim();
+  const text = matchableProblemText(form);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -291,7 +302,7 @@ export default function PostProblem() {
                   <p style={styles.assistDesc}>{assist.assist.description}</p>
                   {(assist.startups?.strong?.length > 0 || assist.startups?.adjacent?.length > 0) && (
                     <p style={styles.assistMeta}>
-                      Similar startups: {[...(assist.startups.strong || []), ...(assist.startups.adjacent || [])]
+                      Startups that could help: {[...(assist.startups.strong || []), ...(assist.startups.adjacent || [])]
                         .slice(0, 3)
                         .map((s) => s.name)
                         .join(", ")}
