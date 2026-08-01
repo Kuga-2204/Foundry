@@ -161,7 +161,7 @@ function inferCategory(text, fallback = "General") {
 }
 
 function polishDescription(text) {
-  let cleaned = stripAssistBoilerplate(text)
+  let cleaned = String(text || "")
     .replace(/\s+/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1")
     .trim();
@@ -216,6 +216,7 @@ function polishDescription(text) {
 
 
   cleaned = cleaned
+    .replace(/\bhey so\b/gi, "Hey, so")
     .replace(/\bthere is some type of issues\b/gi, "there are some issues")
     .replace(/\bthere is some issues\b/gi, "there are some issues")
     .replace(/\bcan some doctor come and check\b/gi, "can a doctor come and check")
@@ -224,8 +225,10 @@ function polishDescription(text) {
     .replace(/\bhow do I cut (him|her|them) off,\s*(he's|she's|they're)\b/gi, "How do I cut $1 off? $2")
     .replace(/\bannoying me\s+How do I cut/gi, "annoying me. How do I cut")
     .replace(/\bthere is this\b/gi, "there is this")
-    .replace(/\bsince yesterday night\b/gi, "since last night");
+    .replace(/\bsince yesterday night\b/gi, "since last night")
+    .replace(/\bsince last night any tips\b/gi, "since last night. Any tips?");
 
+  cleaned = cleaned.replace(/([!?])\./g, "$1");
   cleaned = cleaned.replace(/(^|[.!?]\s+)([a-z])/g, (_match, prefix, letter) => prefix + letter.toUpperCase());
   cleaned = cleaned.replace(/\bCan a doctor come and check\.$/i, "Can a doctor come and check?");
   if (!/[.!?]$/.test(cleaned)) cleaned += ".";
@@ -233,14 +236,14 @@ function polishDescription(text) {
 }
 
 function assistedDescription(text) {
-  return polishDescription(cleanFiller(text));
+  return polishDescription(text);
 }
 
-function validateAssistShape(candidate) {
+function validateAssistShape(candidate, correctedDescription) {
   if (!candidate || typeof candidate !== "object") return null;
   const title = compactTitle(candidate.title || "");
-  const description = polishDescription(candidate.description || "");
-  const category = CATEGORIES.includes(candidate.category) ? candidate.category : inferCategory(description, "General").category;
+  const description = correctedDescription || assistedDescription(candidate.description || "");
+  const category = CATEGORIES.includes(candidate.category) ? candidate.category : inferCategory(stripAssistBoilerplate(description), "General").category;
   if (!title || !description) return null;
   return {
     title,
@@ -269,7 +272,7 @@ function parseJsonObject(text) {
   }
 }
 
-async function aiProblemAssist(description) {
+async function aiProblemAssist(description, correctedDescription = assistedDescription(description)) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
@@ -291,28 +294,29 @@ async function aiProblemAssist(description) {
           {
             role: "system",
             content:
-              "You clean up messy user problem descriptions for Solvyard. Return only JSON with title, description, category. The title must synthesize the full problem, not copy the first sentence. The description must ONLY correct grammar, spelling, punctuation, capitalization, and casual filler. Do not add new needs, solutions, advice, causes, details, or meaning that the user did not write. Category must be one of: " + CATEGORIES.join(", ") + ".",
+              "You help classify messy user problem descriptions for Solvyard. Return only JSON with title, description, category. The title must synthesize the full problem, not copy the first sentence. The server will preserve the user's description, so do not rewrite, summarize, advise, or add meaning in description. Category must be one of: " + CATEGORIES.join(", ") + ".",
           },
           {
             role: "user",
-            content: JSON.stringify({ rawDescription: stripAssistBoilerplate(description) }),
+            content: JSON.stringify({ rawDescription: stripAssistBoilerplate(description), correctedDescription }),
           },
         ],
       }),
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return validateAssistShape(parseJsonObject(data.choices?.[0]?.message?.content));
+    return validateAssistShape(parseJsonObject(data.choices?.[0]?.message?.content), correctedDescription);
   } catch {
     return null;
   } finally {
     clearTimeout(timeout);
   }
 }
-function fallbackProblemAssist({ description }) {
-  const cleanDescription = assistedDescription(description);
-  const inferred = inferCategory(cleanDescription, "General");
-  const suggestedTitle = titleFromText(cleanDescription) || "Problem worth solving";
+function fallbackProblemAssist({ description, correctedDescription = assistedDescription(description) }) {
+  const cleanDescription = correctedDescription;
+  const titleSource = stripAssistBoilerplate(cleanDescription);
+  const inferred = inferCategory(titleSource, "General");
+  const suggestedTitle = titleFromText(titleSource) || "Problem worth solving";
   return {
     title: suggestedTitle,
     description: cleanDescription,
@@ -571,8 +575,10 @@ router.post("/assist", optionalAuth, async (req, res) => {
     return res.status(400).json({ error: "Write a little more before using AI assist." });
   }
 
-  const assist = (await aiProblemAssist(description)) || fallbackProblemAssist({ description });
-  const startupSearchText = `${assist.title} ${polishDescription(description)}`;
+  const correctedDescription = assistedDescription(description);
+  const generatedAssist = (await aiProblemAssist(description, correctedDescription)) || fallbackProblemAssist({ description, correctedDescription });
+  const assist = { ...generatedAssist, description: correctedDescription };
+  const startupSearchText = `${assist.title} ${stripAssistBoilerplate(correctedDescription)}`;
   let { strong, adjacent } = await matchStartups(startupSearchText, { limit: 4 });
   if (!isUnwantedTextingComplaint(description) && strong.length + adjacent.length < 3) {
     const usedStartupIds = new Set([...strong, ...adjacent].map((m) => m.startup.id));
