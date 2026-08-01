@@ -12,7 +12,7 @@ const STOPWORDS = new Set(
    they this to too try trying up us use used using very want wants was way we
    were what when where which while who why will with would you your youre
    always never every everyone people person day daily easy easier hard find
-   finding lot much many keep keeps way ways thing things time`.split(/\s+/)
+   finding lot much many keep keeps way ways thing things time without simple reliable respectful awkward situation solution faster coordination repeated manual`.split(/\s+/)
 );
 
 export function tokenize(text) {

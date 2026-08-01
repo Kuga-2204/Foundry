@@ -36,9 +36,16 @@ const CATEGORY_HINTS = {
   Education: ["school", "course", "class", "study", "student", "exam", "learn", "lesson", "teacher", "university"],
   "Home & Living": ["home", "roommate", "flatmate", "house", "rent", "kitchen", "apartment", "chores", "cleaning"],
   Transport: ["transport", "bus", "train", "ride", "parking", "commute", "traffic", "delivery", "route"],
-  Community: ["community", "neighbour", "neighbor", "group", "event", "volunteer", "local", "people"],
+  Community: ["community", "neighbour", "neighbor", "group", "event", "volunteer", "local", "people", "text", "texts", "texting", "message", "messages", "girl", "friend", "relationship", "boundary", "boundaries"],
   "Developer Tools": ["developer", "code", "api", "github", "deploy", "debug", "database", "server", "frontend", "backend", "bug"],
 };
+
+function stripAssistBoilerplate(text) {
+  return String(text || "")
+    .replace(/\s*this is frustrating because it costs time, creates repeated manual work, and does not have an obvious easy fix\.\s*i would use a solution that makes this simpler, faster, and reliable without adding more coordination\.?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function firstSentence(text) {
   return String(text || "")
@@ -59,6 +66,19 @@ function compactTitle(text) {
   const cut = cleaned.slice(0, 68);
   const lastSpace = cut.lastIndexOf(" ");
   return (lastSpace > 38 ? cut.slice(0, lastSpace) : cut).trim();
+}
+
+function isUnwantedTextingComplaint(text) {
+  const value = String(text || "").toLowerCase();
+  return /\b(girl|guy|someone|person|friend|ex)\b/.test(value)
+    && /\b(text|texts|texting|message|messages|dm|dms|chatting)\b/.test(value)
+    && /\b(annoying|cut\s+.*off|stop|won't stop|keeps?|constant|constantly|since yesterday|last night)\b/.test(value);
+}
+
+function socialBoundaryDescription(text) {
+  const value = polishDescription(stripAssistBoilerplate(text));
+  if (!isUnwantedTextingComplaint(value)) return "";
+  return "Someone has been texting me repeatedly, and I want a simple, respectful way to set boundaries and stop the conversation without making it awkward or escalating the situation.";
 }
 
 function simplifyCause(text) {
@@ -93,6 +113,7 @@ function simplifyPain(text) {
 }
 
 function titleFromText(text) {
+  if (isUnwantedTextingComplaint(text)) return "Unwanted repeated texts from someone I want to avoid";
   const sentence = firstSentence(polishDescription(text));
   if (!sentence) return "";
   const withoutIntro = sentence
@@ -119,7 +140,7 @@ function inferCategory(text, fallback = "General") {
 }
 
 function polishDescription(text) {
-  let cleaned = String(text || "")
+  let cleaned = stripAssistBoilerplate(text)
     .replace(/\s+/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1")
     .trim();
@@ -149,6 +170,10 @@ function polishDescription(text) {
     [/\btheres\b/gi, "there's"],
     [/\btheyre\b/gi, "they're"],
     [/\byoure\b/gi, "you're"],
+    [/\bshes\b/gi, "she's"],
+    [/\bhes\b/gi, "he's"],
+    [/\btextin\s*gme\b/gi, "texting me"],
+    [/\btextin\b/gi, "texting"],
     [/\bteh\b/gi, "the"],
     [/\brecieve\b/gi, "receive"],
     [/\bforgeting\b/gi, "forgetting"],
@@ -175,6 +200,8 @@ function polishDescription(text) {
 }
 
 function assistedDescription(text) {
+  const social = socialBoundaryDescription(text);
+  if (social) return social;
   const raw = polishDescription(text);
   if (!raw) return "";
   if (raw.length >= 180) return raw;
@@ -447,7 +474,7 @@ router.post("/assist", optionalAuth, async (req, res) => {
   const assist = buildProblemAssist({ description });
   const startupSearchText = `${assist.title} ${polishDescription(description)}`;
   let { strong, adjacent } = await matchStartups(startupSearchText, { limit: 4 });
-  if (strong.length + adjacent.length < 3) {
+  if (!isUnwantedTextingComplaint(description) && strong.length + adjacent.length < 3) {
     const usedStartupIds = new Set([...strong, ...adjacent].map((m) => m.startup.id));
     const fallback = await categoryFallbackStartups(assist.category, usedStartupIds, 3 - strong.length - adjacent.length);
     adjacent = adjacent.concat(fallback);
