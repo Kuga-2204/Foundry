@@ -210,26 +210,30 @@ function polishDescription(text) {
     [/\bgrmmar\b/gi, "grammar"],
     [/\beverytime\b/gi, "every time"],
   ];
-
   for (const [pattern, replacement] of corrections) {
     cleaned = cleaned.replace(pattern, replacement);
   }
 
+
+  cleaned = cleaned
+    .replace(/\bthere is some type of issues\b/gi, "there are some issues")
+    .replace(/\bthere is some issues\b/gi, "there are some issues")
+    .replace(/\bcan some doctor come and check\b/gi, "can a doctor come and check")
+    .replace(/\bmy body can a doctor\b/gi, "my body. Can a doctor")
+    .replace(/\bmy body can some doctor\b/gi, "my body. Can a doctor")
+    .replace(/\bhow do I cut (him|her|them) off,\s*(he's|she's|they're)\b/gi, "How do I cut $1 off? $2")
+    .replace(/\bannoying me\s+How do I cut/gi, "annoying me. How do I cut")
+    .replace(/\bthere is this\b/gi, "there is this")
+    .replace(/\bsince yesterday night\b/gi, "since last night");
+
   cleaned = cleaned.replace(/(^|[.!?]\s+)([a-z])/g, (_match, prefix, letter) => prefix + letter.toUpperCase());
+  cleaned = cleaned.replace(/\bCan a doctor come and check\.$/i, "Can a doctor come and check?");
   if (!/[.!?]$/.test(cleaned)) cleaned += ".";
   return cleaned;
 }
 
 function assistedDescription(text) {
-  const medical = medicalCheckDescription(text);
-  if (medical) return medical;
-  const social = socialBoundaryDescription(text);
-  if (social) return social;
-  const raw = polishDescription(text);
-  if (!raw) return "";
-  if (raw.length >= 180) return raw;
-  const sentence = firstSentence(raw) || raw;
-  return sentence + ". This is frustrating because it costs time, creates repeated manual work, and does not have an obvious easy fix. I would use a solution that makes this simpler, faster, and reliable without adding more coordination.";
+  return polishDescription(cleanFiller(text));
 }
 
 function validateAssistShape(candidate) {
@@ -244,7 +248,7 @@ function validateAssistShape(candidate) {
     category,
     confidence: 0.9,
     reasons: [
-      "Rewrote the raw description into a clear problem statement.",
+      "Corrected grammar, spelling, and punctuation in the description.",
       "Generated a concise title from the full description instead of copying the first sentence.",
       "Selected the closest category from the available list.",
     ],
@@ -287,7 +291,7 @@ async function aiProblemAssist(description) {
           {
             role: "system",
             content:
-              "You rewrite messy user problem descriptions for Solvyard. Return only JSON with title, description, category. The title must synthesize the full problem, not copy the first sentence. The description must correct grammar, spelling, punctuation, and casual filler while preserving meaning. Do not invent medical, legal, or safety advice. Category must be one of: " + CATEGORIES.join(", ") + ".",
+              "You clean up messy user problem descriptions for Solvyard. Return only JSON with title, description, category. The title must synthesize the full problem, not copy the first sentence. The description must ONLY correct grammar, spelling, punctuation, capitalization, and casual filler. Do not add new needs, solutions, advice, causes, details, or meaning that the user did not write. Category must be one of: " + CATEGORIES.join(", ") + ".",
           },
           {
             role: "user",
@@ -317,7 +321,7 @@ function fallbackProblemAssist({ description }) {
     reasons: [
       inferred.score > 0 ? "Matched category signals for " + inferred.category + "." : "Kept category broad because the text is still general.",
       "Suggested a short title from the cleaned description.",
-      description && description.length < 180 ? "Cleaned grammar and expanded the description with impact and desired outcome." : "Corrected grammar and spelling while keeping your description close to the original.",
+      "Corrected grammar, spelling, and punctuation while keeping your description close to the original.",
     ],
   };
 }
