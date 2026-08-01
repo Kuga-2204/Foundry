@@ -559,7 +559,9 @@ router.post("/", requireAuth, uploadMedia, async (req, res) => {
     );
   }
 
-  res.status(201).json({ problem: await getFullProblem(problemId, req.userId) });
+  const created = await getFullProblem(problemId, req.userId);
+  prefetchWebMatches({ id: problemId, title: title.trim(), description: description.trim() });
+  res.status(201).json({ problem: created });
 });
 
 router.get("/:id", optionalAuth, async (req, res) => {
@@ -603,7 +605,9 @@ router.put("/:id", requireAuth, async (req, res) => {
   await db.prepare("DELETE FROM problem_match_verdicts WHERE problem_id = ?").run(req.params.id);
   await db.prepare("DELETE FROM problem_web_matches WHERE problem_id = ?").run(req.params.id);
 
-  res.json({ problem: await getFullProblem(req.params.id, req.userId) });
+  const updated = await getFullProblem(req.params.id, req.userId);
+  prefetchWebMatches({ id: problem.id, title: newTitle, description: newDescription });
+  res.json({ problem: updated });
 });
 
 // Delete a problem. Only the person who posted it can remove it. Votes,
@@ -698,6 +702,38 @@ router.get("/:id/matches", async (req, res) => {
   res.json(await matchesForProblem(problem));
 });
 
+async function cacheWebMatches(problemId, results) {
+  await db
+    .prepare(
+      `INSERT INTO problem_web_matches (problem_id, results, computed_at)
+       VALUES (?, ?, now())
+       ON CONFLICT (problem_id) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
+       RETURNING problem_id`
+    )
+    .run(problemId, JSON.stringify(results));
+}
+
+// A live web search takes roughly twenty seconds, so it is started the moment a
+// problem is posted rather than when someone opens it. By the time anyone
+// looks, the answer is already cached and the section renders instantly.
+//
+// Deliberately not awaited: the poster gets their redirect immediately, and a
+// failure here costs nothing because the route below will simply search on
+// demand instead.
+function prefetchWebMatches(problem) {
+  if (!agentEnabled()) return;
+  setImmediate(async () => {
+    try {
+      const directory = await matchesForProblem(problem);
+      if (directory.strong.length > 0) return;
+      const results = await searchWeb(problem);
+      if (results) await cacheWebMatches(problem.id, results);
+    } catch (err) {
+      console.error("web prefetch failed:", err.message);
+    }
+  });
+}
+
 // Products from the open web, for problems the directory cannot answer. Kept
 // on its own route because a live web search takes far longer than a page
 // load should: /matches stays fast and this fills in behind it.
@@ -720,25 +756,19 @@ router.get("/:id/web-matches", async (req, res) => {
     }
   }
 
-  // The web is the fallback, not a parallel answer. If Solvyard can answer
-  // this itself, spend nothing here.
+  // The web is the fallback, not a parallel answer. Only a startup that
+  // actually solves the problem stops the search: an "adjacent" ruling means
+  // the agent decided that startup does not solve it, which is precisely when
+  // looking further afield is worth doing.
   const directory = await matchesForProblem(problem);
-  if (directory.strong.length > 0 || directory.adjacent.length > 0) {
+  if (directory.strong.length > 0) {
     return res.json({ results: [], searched: false, reason: "directory-has-matches" });
   }
 
   const results = await searchWeb(problem);
   if (!results) return res.json({ results: [], searched: false });
 
-  await db
-    .prepare(
-      `INSERT INTO problem_web_matches (problem_id, results, computed_at)
-       VALUES (?, ?, now())
-       ON CONFLICT (problem_id) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
-       RETURNING problem_id`
-    )
-    .run(problem.id, JSON.stringify(results));
-
+  await cacheWebMatches(problem.id, results);
   res.json({ results, searched: true });
 });
 

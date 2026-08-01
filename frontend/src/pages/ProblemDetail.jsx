@@ -165,8 +165,10 @@ export default function ProblemDetail() {
     );
   if (!problem) return null;
 
-  // Solvyard could not answer this one, so it is worth looking outside it.
-  const directoryEmpty = matches.strong.length === 0 && matches.adjacent.length === 0;
+  // Only a startup that actually solves the problem counts as an answer. An
+  // "adjacent" match is the agent saying it does not solve this, and it is not
+  // shown above, so the page would otherwise be empty.
+  const directoryEmpty = matches.strong.length === 0;
 
   return (
     <div className="wrap" style={styles.wrap}>

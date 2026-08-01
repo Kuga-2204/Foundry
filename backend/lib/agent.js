@@ -101,23 +101,54 @@ function clean(text) {
   return String(text || "")
     .replace(/\s*\(?\[[^\]]*\]\((https?:)?\/\/[^)]*\)\)?/g, "")
     .replace(/\s*—\s*/g, ", ")
+    // Typographic hyphens and quotes render inconsistently across fonts, and
+    // the model reaches for them unprompted. Fold them back to plain ASCII.
+    .replace(/[‐‑‒–]/g, "-")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
     .replace(/\s+([.,])/g, "$1")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-const WEB_SYSTEM = `You find real, currently available products that solve a specific problem someone described.
+const WEB_SYSTEM = `You find real products that solve a specific problem someone described.
 
-Search the web and return only products a person could actually go and use today. A product qualifies only if it addresses the specific problem as described, not the general topic around it.
+Anything a person could actually sign up for and use today counts: products from large established companies, mainstream apps, tools built into a bank or operating system, and smaller independent products alike. Do not limit yourself to startups. Pick whatever genuinely solves the problem best, however big or small the company behind it is.
+
+Search before answering. Never answer from memory: products get shut down or folded into other products, so confirm in this session's search results that each one is still operating today.
 
 Rules:
-- Only real products with a working homepage URL. Never invent a product or a URL.
-- Link the product's own site, not a blog post, listicle, app-store page, or review roundup.
-- Skip anything discontinued, in waitlist-only beta, or region-locked to somewhere the poster probably is not.
+- Only real products. Never invent a product or a URL.
+- Link the product's own official homepage, and prefer the shortest form of it. Never link a blog post, a "best tools for" roundup, a review or comparison site, an app store listing, Wikipedia, Reddit, or a video.
+- Skip anything shut down, merged into another product, waitlist-only, or unavailable in most countries. If a product's own site now redirects somewhere else, it does not count.
+- A product qualifies only if it addresses the specific problem as described, not the general topic around it.
 - If nothing genuinely solves the problem, return an empty list. An empty answer is correct and useful; a padded one is not.
 - Return at most 3, best first.
 
 Describe each in one short sentence, in plain language, addressed to the person with the problem. Say what it does about their specific problem, not what the company says about itself. Never use em dashes; use commas or a second sentence instead.`;
+
+// Sites that write *about* products rather than being one. A link here means
+// the model ignored the instruction to return the product's own home page.
+const NOT_A_PRODUCT_SITE =
+  /(^|\.)(wikipedia\.org|reddit\.com|youtube\.com|medium\.com|substack\.com|quora\.com|producthunt\.com|g2\.com|capterra\.com|trustpilot\.com|getapp\.com|softwareadvice\.com|slant\.co|alternativeto\.net|techcrunch\.com|forbes\.com|nytimes\.com|theverge\.com|cnet\.com|pcmag\.com|tomsguide\.com|zdnet\.com|apps\.apple\.com|play\.google\.com|itunes\.apple\.com|facebook\.com|twitter\.com|x\.com|linkedin\.com|instagram\.com)$/i;
+
+// Keeps only links that look like a real product's own site, and strips the
+// tracking parameters the search tool appends to them.
+function tidyUrl(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (!/^https?:$/.test(url.protocol)) return null;
+  if (NOT_A_PRODUCT_SITE.test(url.hostname)) return null;
+
+  url.hash = "";
+  url.search = "";
+  // A bare domain is the canonical home page; "/" adds nothing.
+  return url.pathname === "/" ? `${url.protocol}//${url.host}` : url.toString();
+}
 
 const WEB_SCHEMA = {
   type: "object",
@@ -150,7 +181,13 @@ export async function searchWeb(problem) {
   try {
     const response = await client.responses.create({
       model: MODEL,
-      tools: [{ type: "web_search" }],
+      // Reading a few results is enough to confirm a product exists and what it
+      // does; a wider context makes the call slower without making it righter.
+      tools: [{ type: "web_search", search_context_size: "low" }],
+      // Forces at least one real search. Left to itself the model will
+      // sometimes answer from memory, which is how discontinued products get
+      // recommended.
+      tool_choice: { type: "web_search" },
       // This is search and summarise, not deep reasoning. Low effort keeps the
       // call inside a serverless request budget.
       reasoning: { effort: "low" },
@@ -170,9 +207,9 @@ export async function searchWeb(problem) {
     if (!Array.isArray(results)) return null;
 
     return results
-      .filter((r) => r.name && /^https?:\/\//i.test(r.url || ""))
-      .slice(0, 3)
-      .map((r) => ({ name: clean(r.name), url: r.url, description: clean(r.description) }));
+      .map((r) => ({ name: clean(r.name), url: tidyUrl(r.url), description: clean(r.description) }))
+      .filter((r) => r.name && r.url)
+      .slice(0, 3);
   } catch (err) {
     console.error("web search failed:", err.message);
     return null;
