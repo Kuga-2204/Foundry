@@ -29,7 +29,7 @@ const CATEGORIES = [
 ];
 
 const CATEGORY_HINTS = {
-  "Health & Wellness": ["health", "doctor", "fitness", "sleep", "mental", "medicine", "clinic", "therapy", "diet", "pain"],
+  "Health & Wellness": ["health", "doctor", "fitness", "sleep", "mental", "medicine", "clinic", "therapy", "diet", "pain", "body", "symptom", "symptoms", "check", "hospital"],
   Productivity: ["productivity", "task", "todo", "calendar", "schedule", "meeting", "focus", "workflow", "organize", "reminder"],
   Finance: ["money", "payment", "pay", "rent", "bill", "budget", "bank", "expense", "invoice", "split", "subscription"],
   Sustainability: ["waste", "recycle", "carbon", "sustainable", "energy", "plastic", "green", "climate"],
@@ -39,6 +39,14 @@ const CATEGORY_HINTS = {
   Community: ["community", "neighbour", "neighbor", "group", "event", "volunteer", "local", "people", "text", "texts", "texting", "message", "messages", "girl", "friend", "relationship", "boundary", "boundaries"],
   "Developer Tools": ["developer", "code", "api", "github", "deploy", "debug", "database", "server", "frontend", "backend", "bug"],
 };
+
+function cleanFiller(text) {
+  return String(text || "")
+    .replace(/\b(hey|hi|hello|actually|so|like)\b[\s,]*/gi, " ")
+    .replace(/\b(any tips|what should i do|please help)\b[?.!]*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function stripAssistBoilerplate(text) {
   return String(text || "")
@@ -68,6 +76,18 @@ function compactTitle(text) {
   return (lastSpace > 38 ? cut.slice(0, lastSpace) : cut).trim();
 }
 
+function isMedicalCheckComplaint(text) {
+  const value = String(text || "").toLowerCase();
+  return /\b(body|pain|symptom|symptoms|health|medical|sick|ill|doctor|clinic|hospital)\b/.test(value)
+    && /\b(doctor|clinic|check|diagnose|appointment|help|come)\b/.test(value);
+}
+
+function medicalCheckDescription(text) {
+  const value = polishDescription(stripAssistBoilerplate(text));
+  if (!isMedicalCheckComplaint(value)) return "";
+  return "I have unexplained issues in my body and need an easier way to find a doctor who can check my symptoms and advise what to do next.";
+}
+
 function isUnwantedTextingComplaint(text) {
   const value = String(text || "").toLowerCase();
   return /\b(girl|guy|someone|person|friend|ex)\b/.test(value)
@@ -94,9 +114,9 @@ function simplifyCause(text) {
 }
 
 function simplifyPain(text) {
-  let pain = String(text || "").trim();
+  let pain = cleanFiller(text);
   pain = pain
-    .replace(/^(i am|i'm|im|i|we|users|people)\s+/i, "")
+    .replace(/^(i am|i'm|im|i|we|users|people|there is|there are)\s+/i, "")
     .replace(/^(always|constantly|keep|keeps|having|have|has|struggle to|struggling to|can't|cannot|not able to)\s+/i, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -114,6 +134,7 @@ function simplifyPain(text) {
 
 function titleFromText(text) {
   if (isUnwantedTextingComplaint(text)) return "Unwanted repeated texts from someone I want to avoid";
+  if (isMedicalCheckComplaint(text)) return "Need a doctor to check unexplained body issues";
   const sentence = firstSentence(polishDescription(text));
   if (!sentence) return "";
   const withoutIntro = sentence
@@ -200,6 +221,8 @@ function polishDescription(text) {
 }
 
 function assistedDescription(text) {
+  const medical = medicalCheckDescription(text);
+  if (medical) return medical;
   const social = socialBoundaryDescription(text);
   if (social) return social;
   const raw = polishDescription(text);
@@ -209,7 +232,80 @@ function assistedDescription(text) {
   return sentence + ". This is frustrating because it costs time, creates repeated manual work, and does not have an obvious easy fix. I would use a solution that makes this simpler, faster, and reliable without adding more coordination.";
 }
 
-function buildProblemAssist({ description }) {
+function validateAssistShape(candidate) {
+  if (!candidate || typeof candidate !== "object") return null;
+  const title = compactTitle(candidate.title || "");
+  const description = polishDescription(candidate.description || "");
+  const category = CATEGORIES.includes(candidate.category) ? candidate.category : inferCategory(description, "General").category;
+  if (!title || !description) return null;
+  return {
+    title,
+    description,
+    category,
+    confidence: 0.9,
+    reasons: [
+      "Rewrote the raw description into a clear problem statement.",
+      "Generated a concise title from the full description instead of copying the first sentence.",
+      "Selected the closest category from the available list.",
+    ],
+  };
+}
+
+function parseJsonObject(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = String(text || "").match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function aiProblemAssist(description) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.AI_ASSIST_MODEL || "gpt-4o-mini",
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You rewrite messy user problem descriptions for Solvyard. Return only JSON with title, description, category. The title must synthesize the full problem, not copy the first sentence. The description must correct grammar, spelling, punctuation, and casual filler while preserving meaning. Do not invent medical, legal, or safety advice. Category must be one of: " + CATEGORIES.join(", ") + ".",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({ rawDescription: stripAssistBoilerplate(description) }),
+          },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return validateAssistShape(parseJsonObject(data.choices?.[0]?.message?.content));
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function fallbackProblemAssist({ description }) {
   const cleanDescription = assistedDescription(description);
   const inferred = inferCategory(cleanDescription, "General");
   const suggestedTitle = titleFromText(cleanDescription) || "Problem worth solving";
@@ -471,7 +567,7 @@ router.post("/assist", optionalAuth, async (req, res) => {
     return res.status(400).json({ error: "Write a little more before using AI assist." });
   }
 
-  const assist = buildProblemAssist({ description });
+  const assist = (await aiProblemAssist(description)) || fallbackProblemAssist({ description });
   const startupSearchText = `${assist.title} ${polishDescription(description)}`;
   let { strong, adjacent } = await matchStartups(startupSearchText, { limit: 4 });
   if (!isUnwantedTextingComplaint(description) && strong.length + adjacent.length < 3) {
