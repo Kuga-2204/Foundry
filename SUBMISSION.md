@@ -178,6 +178,32 @@ not finish and the first person to open the problem waits for the live search
 instead. The keyword matcher only works in English and compares words rather
 than meaning.
 
+
+---
+
+## Agentic social posting
+
+The latest branch also includes a backend agent framework for discovering public problem signals and posting them as credited Solvyard problems.
+
+Read `docs/AGENTS.md` first. The key files are:
+
+- `backend/lib/agentic.js`: reusable `Agent` and `AgentWorkflow` primitives.
+- `backend/lib/agent.js`: social discovery workflow with `DiscoveryPlanner`, `SourceScoutSwarm`, and `EvidenceVerifier`.
+- `backend/lib/socialPostingAgent.js`: posting workflow with `DiscoverProblemsAgent`, `DedupeAgent`, and `PostingAgent`.
+- `backend/scripts/import-social-problems.js`: backend runner for imports without touching the frontend.
+- `backend/db/index.js`: source attribution columns and unique source URL dedupe index.
+
+Run one category import from the backend:
+
+```bash
+cd backend
+npm run agent:import-social -- --category=Productivity --per-category=1
+```
+
+Imported problems are posted by `Solvyard Radar` and carry original-source fields so cards and detail pages can show `Originally from Reddit/X/LinkedIn/etc` with a link.
+
+This is not a frontend OpenAI call. The frontend can trigger imports for convenience, but the real worker is the backend agent workflow and can run from a server job or cron.
+
 ---
 
 ## Credentials
