@@ -17,6 +17,10 @@ export default function Problems() {
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [votingIds, setVotingIds] = useState(() => new Set());
   const [followingIds, setFollowingIds] = useState(() => new Set());
+  const [socialDiscovery, setSocialDiscovery] = useState({ results: [], grouped: {}, searched: false });
+  const [socialLoading, setSocialLoading] = useState(false);
+  const [socialError, setSocialError] = useState("");
+  const [socialMessage, setSocialMessage] = useState("");
 
   const sort = searchParams.get("sort") || "discover";
   const category = searchParams.get("category") || "All";
@@ -41,6 +45,44 @@ export default function Problems() {
     }
   }, [sort, category, status, mine, searchParams, token]);
 
+  const loadSocialDiscovery = useCallback(async (refresh = false) => {
+    setSocialLoading(true);
+    setSocialError("");
+    try {
+      const params = { category };
+      if (refresh) params.refresh = "true";
+      const data = await api.socialProblemDiscovery(params);
+      setSocialDiscovery(data);
+    } catch (err) {
+      setSocialError(err.message);
+    } finally {
+      setSocialLoading(false);
+    }
+  }, [category]);
+
+  const importLatestSocialProblems = useCallback(async () => {
+    if (!token) {
+      setSocialError("Log in to import social problems as site posts.");
+      return;
+    }
+    setSocialLoading(true);
+    setSocialError("");
+    setSocialMessage("");
+    try {
+      const command =
+        category === "All"
+          ? "Import the latest social problems for all categories, one per category."
+          : `Import the latest ${category} social problems, two per category.`;
+      const data = await api.runSocialAgentCommand({ command }, token);
+      setSocialDiscovery({ results: data.discovered || [], grouped: data.grouped || {}, searched: true, cached: false, agentTrace: data.trace });
+      setSocialMessage(`Agent imported ${data.imported?.length || 0} new problem${(data.imported?.length || 0) === 1 ? "" : "s"}.`);
+      await load();
+    } catch (err) {
+      setSocialError(err.message);
+    } finally {
+      setSocialLoading(false);
+    }
+  }, [category, load, token]);
   useEffect(() => {
     api.categories().then((d) => setCategories(d.categories));
   }, []);
@@ -48,6 +90,10 @@ export default function Problems() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    loadSocialDiscovery();
+  }, [loadSocialDiscovery]);
 
   const updateParam = (key, value) => {
     const next = new URLSearchParams(searchParams);
@@ -108,6 +154,8 @@ export default function Problems() {
     }
   };
 
+  const socialGroups = Object.entries(socialDiscovery.grouped || {});
+  const showSocialDiscovery = !mine && !searchParams.get("search");
   return (
     <div className="wrap" style={styles.wrap}>
       {!mine && <WelcomeBanner />}
@@ -162,6 +210,44 @@ export default function Problems() {
 
       {error && <div className="error-banner">{error}</div>}
 
+      {showSocialDiscovery && (
+        <section style={styles.socialSection}>
+          <div style={styles.socialHead}>
+            <div>
+              <span className="mono" style={styles.socialKicker}>SOCIAL RADAR</span>
+              <h2 style={styles.socialTitle}>Latest problems people are talking about</h2>
+            </div>
+            <button className="btn btn-sm" type="button" onClick={importLatestSocialProblems} disabled={socialLoading}>
+              {socialLoading ? "Agent running" : "Run agent"}
+            </button>
+          </div>
+          {socialMessage && <p style={styles.socialMuted}>{socialMessage}</p>}
+          {socialError ? (
+            <p style={styles.socialMuted}>{socialError}</p>
+          ) : socialLoading && socialGroups.length === 0 ? (
+            <p style={styles.socialMuted}>Searching Reddit, X, LinkedIn, Hacker News, and Quora.</p>
+          ) : socialGroups.length === 0 ? (
+            <p style={styles.socialMuted}>No fresh social problems found yet.</p>
+          ) : (
+            <div style={styles.socialGrid}>
+              {socialGroups.map(([groupCategory, items]) => (
+                <div key={groupCategory} style={styles.socialGroup}>
+                  <h3 style={styles.socialCategory}>{groupCategory}</h3>
+                  {items.slice(0, 4).map((item) => (
+                    <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noopener noreferrer" style={styles.socialItem}>
+                      <span style={styles.socialMeta}>{item.source} - {item.posted_at || "Recent"}</span>
+                      <strong style={styles.socialItemTitle}>{item.title}</strong>
+                      <span style={styles.socialDesc}>{item.description}</span>
+                      {item.evidence && <span style={styles.socialEvidence}>{item.evidence}</span>}
+                    </a>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {loading ? (
         <LoadingScreen label="Searching problems" />
       ) : problems.length === 0 ? (
@@ -208,6 +294,34 @@ const styles = {
     fontSize: 14,
     background: "#fff",
   },
+  socialSection: {
+    border: "1.5px solid var(--line)",
+    background: "#f7f8f0",
+    padding: 18,
+    marginBottom: 24,
+    borderRadius: 4,
+  },
+  socialHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" },
+  socialKicker: { fontSize: 11, fontWeight: 700, color: "var(--text-dim)", letterSpacing: 1.2 },
+  socialTitle: { fontSize: 18, marginTop: 3 },
+  socialMuted: { color: "var(--text-dim)", fontSize: 14 },
+  socialGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 },
+  socialGroup: { minWidth: 0 },
+  socialCategory: { fontSize: 13, marginBottom: 8, color: "var(--ink)" },
+  socialItem: {
+    display: "block",
+    textDecoration: "none",
+    color: "inherit",
+    background: "#fff",
+    border: "1px solid var(--line)",
+    borderRadius: 4,
+    padding: 12,
+    marginBottom: 8,
+  },
+  socialMeta: { display: "block", fontSize: 11.5, color: "var(--text-dim)", marginBottom: 5, fontWeight: 600 },
+  socialItemTitle: { display: "block", fontSize: 14, lineHeight: 1.35, marginBottom: 5 },
+  socialDesc: { display: "block", fontSize: 13, lineHeight: 1.45, color: "var(--text)" },
+  socialEvidence: { display: "block", fontSize: 12.5, lineHeight: 1.4, color: "var(--text-dim)", marginTop: 6 },
   empty: { color: "var(--text-dim)", padding: "40px 0", textAlign: "center" },
   emptyState: { padding: "60px 0", textAlign: "center", border: "1.5px dashed var(--line)", borderRadius: 4 },
 };

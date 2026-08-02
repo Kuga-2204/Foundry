@@ -19,6 +19,17 @@ function deriveTitle(body) {
   return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trim() + "…";
 }
 
+function coreComplaint(body) {
+  return String(body || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+/)[0]
+    .trim();
+}
+
+function matchableProblemText(form) {
+  return `${form.title || ""} ${coreComplaint(form.description)}`.trim();
+}
 // Post a problem. Quick by default: one complaint box, with title/category/
 // media tucked under "more options". Two live checks run while typing (does a
 // startup already solve this; is it already listed). The draft autosaves, and
@@ -35,6 +46,9 @@ export default function PostProblem() {
   const [matches, setMatches] = useState({ strong: [], adjacent: [] });
   const [similar, setSimilar] = useState([]);
   const [checked, setChecked] = useState(false);
+  const [assist, setAssist] = useState(null);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistError, setAssistError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -49,6 +63,8 @@ export default function PostProblem() {
     setAnonymousHandle("");
     setDraftRestored(false);
     setSavedAt(null);
+    setAssist(null);
+    setAssistError("");
   };
 
   useEffect(() => {
@@ -84,7 +100,7 @@ export default function PostProblem() {
     }
   }, [form, anonymous, anonymousHandle]);
 
-  const text = `${form.title} ${form.description}`.trim();
+  const text = matchableProblemText(form);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -106,6 +122,37 @@ export default function PostProblem() {
     return () => clearTimeout(debounceRef.current);
   }, [text, token]);
 
+  const runAssist = async () => {
+    if (form.description.trim().length < 8) {
+      setAssistError("Write a little more in the description, then AI assist can fill the rest.");
+      return;
+    }
+    setAssistBusy(true);
+    setAssistError("");
+    try {
+      const data = await api.assistProblem({ description: form.description }, token);
+      setAssist(data);
+      if (data.startups) {
+        setMatches(data.startups);
+        setChecked(true);
+      }
+    } catch (err) {
+      setAssistError(err.message);
+    } finally {
+      setAssistBusy(false);
+    }
+  };
+
+  const applyAssist = () => {
+    if (!assist?.assist) return;
+    setForm({
+      title: assist.assist.title,
+      description: assist.assist.description,
+      category: assist.assist.category,
+    });
+    setShowDetails(true);
+    setAssistError("");
+  };
   // Back an existing listing straight from the duplicate panel: the whole
   // point of showing duplicates is that voting is the better move.
   const upvoteSimilar = async (problemId) => {
@@ -232,6 +279,41 @@ export default function PostProblem() {
               />
             </div>
 
+            <div style={styles.assistBox}>
+              <div style={styles.assistTop}>
+                <span className="mono" style={styles.assistLabel}>AI ASSIST</span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={runAssist}
+                  disabled={assistBusy || form.description.trim().length < 8}
+                >
+                  {assistBusy ? "Thinking..." : "Autofill problem"}
+                </button>
+              </div>
+              <p style={styles.assistHint}>
+                Write only the description. AI assist will fix grammar and spelling, then fill the title and category.
+              </p>
+              {assistError && <p style={styles.assistError}>{assistError}</p>}
+              {assist?.assist && (
+                <div style={styles.assistResult}>
+                  <p style={styles.assistTitle}>{assist.assist.title}</p>
+                  <p style={styles.assistMeta}>Category: {assist.assist.category}</p>
+                  <p style={styles.assistDesc}>{assist.assist.description}</p>
+                  {(assist.startups?.strong?.length > 0 || assist.startups?.adjacent?.length > 0) && (
+                    <p style={styles.assistMeta}>
+                      Startups that could help: {[...(assist.startups.strong || []), ...(assist.startups.adjacent || [])]
+                        .slice(0, 3)
+                        .map((s) => s.name)
+                        .join(", ")}
+                    </p>
+                  )}
+                  <button type="button" className="btn btn-sm btn-primary" onClick={applyAssist}>
+                    Apply AI autofill
+                  </button>
+                </div>
+              )}
+            </div>
             {!showDetails ? (
               <button
                 type="button"
@@ -454,6 +536,18 @@ const styles = {
     fontSize: 13.5, fontWeight: 600, color: "var(--build)", fontFamily: "inherit",
   },
   detailsBox: { marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line)" },
+  assistBox: {
+    border: "1.5px solid var(--line)", borderRadius: 4, padding: 14, marginTop: -4, marginBottom: 16,
+    background: "var(--paper-dim)",
+  },
+  assistTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 },
+  assistLabel: { fontSize: 10.5, letterSpacing: 1, color: "var(--ink)", fontWeight: 700 },
+  assistHint: { fontSize: 12.5, color: "var(--text-dim)", lineHeight: 1.45 },
+  assistError: { fontSize: 12.5, color: "var(--signal)", marginTop: 8 },
+  assistResult: { marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" },
+  assistTitle: { fontSize: 14, fontWeight: 700, marginBottom: 5 },
+  assistMeta: { fontSize: 12.5, color: "var(--text-dim)", marginBottom: 8, lineHeight: 1.45 },
+  assistDesc: { fontSize: 13, color: "var(--text)", lineHeight: 1.5, marginBottom: 12 },
   optional: { fontWeight: 400, fontSize: 12, color: "var(--text-dim)" },
   authNote: { fontSize: 12.5, color: "var(--text-dim)", textAlign: "center", marginTop: 10, lineHeight: 1.45 },
   savedNote: { fontSize: 12, color: "var(--build)", textAlign: "center", marginTop: 8 },

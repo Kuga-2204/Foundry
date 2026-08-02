@@ -7,7 +7,7 @@ commit to building a fix, and ship to an audience that was already waiting.
 Reviews are stake-gated (only people who posted or voted on the problem) and
 outcome-based (solved / partial / unsolved).
 
-See PRODUCT.md for the full product spec.
+See PRODUCT.md for the full product spec. See docs/AGENTS.md for the backend agent framework, social discovery workflow, and credited social posting agent.
 
 ## Stack
 - **Backend**: Node + Express + Supabase Postgres (via `pg`), JWT auth,
@@ -22,6 +22,9 @@ backend/
   db/index.js           SQLite connection + schema (auto-created on first run)
   db/seed.js            seeds sample unclaimed startup profiles (npm run seed)
   lib/match.js          problem-to-startup text matching engine
+  lib/agentic.js        lightweight in-repo agent workflow framework
+  lib/agent.js          matching/web/social discovery agents
+  lib/socialPostingAgent.js  posts credited social discoveries as problems
   lib/notify.js         notifications + problem followers
   lib/stake.js          shared review-eligibility rule
   middleware/auth.js    JWT auth middleware
@@ -67,3 +70,14 @@ Set `SUPABASE_DB_URL` and `JWT_SECRET` in `backend/.env` before deploying anywhe
 For problem photos/videos, also create a public Supabase Storage bucket named
 `problem-media` and set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and
 `SUPABASE_STORAGE_BUCKET` in the backend environment.
+
+## Agentic social imports
+
+The backend can discover public problem signals from Reddit, X/Twitter, LinkedIn, Hacker News, and Quora, then post them as credited Solvyard problems through the agent framework.
+
+```bash
+cd backend
+npm run agent:import-social -- --category=Productivity --per-category=1
+```
+
+Imported posts appear as `Solvyard Radar` and include an `Originally from <source>` link. Details are in `docs/AGENTS.md`.

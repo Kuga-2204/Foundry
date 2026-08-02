@@ -47,6 +47,11 @@ export default function ProblemCard({
           {problem.title}
         </Link>
         <p style={styles.desc}>{problem.description}</p>
+        {problem.source_url && (
+          <a href={problem.source_url} target="_blank" rel="noopener noreferrer" style={styles.sourceLink}>
+            Originally from {problem.source_name || "the web"}
+          </a>
+        )}
 
         <div style={styles.footer}>
           <div style={styles.footerItems}>
@@ -142,6 +147,13 @@ const styles = {
     WebkitBoxOrient: "vertical",
     overflow: "hidden",
     marginBottom: 12,
+  },
+  sourceLink: {
+    display: "inline-flex",
+    marginBottom: 12,
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: "var(--build)",
   },
   footer: {
     display: "flex",

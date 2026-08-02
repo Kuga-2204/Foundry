@@ -33,6 +33,8 @@ export const api = {
   updateUserInterests: (interests, token) =>
     request("/users/me/interests", { method: "PUT", body: { interests }, token }),
   categories: () => request("/problems/categories"),
+  assistProblem: (payload, token) =>
+    request("/problems/assist", { method: "POST", body: payload, token }),
   listProblems: (params, token) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/problems${qs ? `?${qs}` : ""}`, { token });
@@ -51,6 +53,14 @@ export const api = {
     request("/problems/similar", { method: "POST", body: { text }, token }),
   problemMatches: (id) => request(`/problems/${id}/matches`),
   problemWebMatches: (id) => request(`/problems/${id}/web-matches`),
+  socialProblemDiscovery: (params) => {
+    const qs = new URLSearchParams(params || {}).toString();
+    return request(`/problems/social-discovery${qs ? `?${qs}` : ""}`);
+  },
+  importSocialProblems: (payload, token) =>
+    request("/problems/social-discovery/import", { method: "POST", body: payload, token }),
+  runSocialAgentCommand: (payload, token) =>
+    request("/problems/social-discovery/command", { method: "POST", body: payload, token }),
   listComments: (problemId, token) => request(`/problems/${problemId}/comments`, { token }),
   postComment: (problemId, payload, token) =>
     request(`/problems/${problemId}/comments`, { method: "POST", body: payload, token }),

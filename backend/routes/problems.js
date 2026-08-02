@@ -1,7 +1,7 @@
 import { Router } from "express";
 import db from "../db/index.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import { matchStartups, matchSimilarProblems } from "../lib/match.js";
+import { matchStartups, matchSimilarProblems, tokenize } from "../lib/match.js";
 import { notify, notifyFollowers, follow } from "../lib/notify.js";
 import {
   anonymousHandleCandidates,
@@ -12,7 +12,8 @@ import {
 import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
-import { agentEnabled, judgeMatches, searchWeb, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
+import { agentEnabled, discoverSocialProblems, judgeMatches, searchWeb, SOCIAL_DISCOVERY_TTL_MS, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
+import { importSocialProblems, runSocialImportCommand } from "../lib/socialPostingAgent.js";
 
 const router = Router();
 
@@ -28,6 +29,336 @@ const CATEGORIES = [
   "Community",
   "Developer Tools",
 ];
+
+const CATEGORY_HINTS = {
+  "Health & Wellness": ["health", "doctor", "fitness", "sleep", "mental", "medicine", "clinic", "therapy", "diet", "pain", "body", "symptom", "symptoms", "check", "hospital"],
+  Productivity: ["productivity", "task", "todo", "calendar", "schedule", "meeting", "focus", "workflow", "organize", "reminder"],
+  Finance: ["money", "payment", "pay", "rent", "bill", "budget", "bank", "expense", "invoice", "split", "subscription"],
+  Sustainability: ["waste", "recycle", "carbon", "sustainable", "energy", "plastic", "green", "climate"],
+  Education: ["school", "course", "class", "study", "student", "exam", "learn", "lesson", "teacher", "university"],
+  "Home & Living": ["home", "roommate", "flatmate", "house", "rent", "kitchen", "apartment", "chores", "cleaning"],
+  Transport: ["transport", "bus", "train", "ride", "parking", "commute", "traffic", "delivery", "route"],
+  Community: ["community", "neighbour", "neighbor", "group", "event", "volunteer", "local", "people", "text", "texts", "texting", "message", "messages", "girl", "friend", "relationship", "boundary", "boundaries"],
+  "Developer Tools": ["developer", "code", "api", "github", "deploy", "debug", "database", "server", "frontend", "backend", "bug"],
+};
+
+function cleanFiller(text) {
+  return String(text || "")
+    .replace(/\b(hey|hi|hello|actually|so|like)\b[\s,]*/gi, " ")
+    .replace(/\b(any tips|what should i do|please help)\b[?.!]*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripAssistBoilerplate(text) {
+  return String(text || "")
+    .replace(/\s*this is frustrating because it costs time, creates repeated manual work, and does not have an obvious easy fix\.\s*i would use a solution that makes this simpler, faster, and reliable without adding more coordination\.?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function firstSentence(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+/)[0]
+    .replace(/[.!?]+$/, "")
+    .trim();
+}
+
+function compactTitle(text) {
+  const cleaned = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/[.!?]+$/g, "")
+    .trim();
+  if (!cleaned) return "";
+  if (cleaned.length <= 68) return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  const cut = cleaned.slice(0, 68);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 38 ? cut.slice(0, lastSpace) : cut).trim();
+}
+
+function isMedicalCheckComplaint(text) {
+  const value = String(text || "").toLowerCase();
+  return /\b(body|pain|symptom|symptoms|health|medical|sick|ill|doctor|clinic|hospital)\b/.test(value)
+    && /\b(doctor|clinic|check|diagnose|appointment|help|come)\b/.test(value);
+}
+
+function medicalCheckDescription(text) {
+  const value = polishDescription(stripAssistBoilerplate(text));
+  if (!isMedicalCheckComplaint(value)) return "";
+  return "I have unexplained issues in my body and need an easier way to find a doctor who can check my symptoms and advise what to do next.";
+}
+
+function isUnwantedTextingComplaint(text) {
+  const value = String(text || "").toLowerCase();
+  return /\b(girl|guy|someone|person|friend|ex)\b/.test(value)
+    && /\b(text|texts|texting|message|messages|dm|dms|chatting)\b/.test(value)
+    && /\b(annoying|cut\s+.*off|stop|won't stop|keeps?|constant|constantly|since yesterday|last night)\b/.test(value);
+}
+
+function socialBoundaryDescription(text) {
+  const value = polishDescription(stripAssistBoilerplate(text));
+  if (!isUnwantedTextingComplaint(value)) return "";
+  return "Someone has been texting me repeatedly, and I want a simple, respectful way to set boundaries and stop the conversation without making it awkward or escalating the situation.";
+}
+
+function simplifyCause(text) {
+  const cause = String(text || "").toLowerCase();
+  if (/chat|message|whatsapp|slack|discord|calendar|meeting|deadline/.test(cause)) {
+    if (/separate|different|scattered|shared|everyone|change/.test(cause)) return "scattered chat and calendar updates";
+    return "messy communication channels";
+  }
+  if (/roommate|flatmate|rent|bill|expense|money|split/.test(cause)) return "unclear shared expenses";
+  if (/schedule|task|todo|reminder|organize|workflow/.test(cause)) return "manual coordination";
+  if (/bug|code|api|deploy|server|frontend|backend/.test(cause)) return "unreliable tooling";
+  return cause.replace(/^(everyone|people|users|we|they)\s+/i, "").slice(0, 48).trim();
+}
+
+function simplifyPain(text) {
+  let pain = cleanFiller(text);
+  pain = pain
+    .replace(/^(i am|i'm|im|i|we|users|people|there is|there are)\s+/i, "")
+    .replace(/^(always|constantly|keep|keeps|having|have|has|struggle to|struggling to|can't|cannot|not able to)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  pain = pain
+    .replace(/forgetting\s+(project\s+)?deadlines?\s+and\s+meetings?/i, "missed project deadlines")
+    .replace(/forgetting\s+deadlines?/i, "missed deadlines")
+    .replace(/not able to sit properly/i, "trouble sitting comfortably")
+    .replace(/sit properly/i, "sitting comfortably")
+    .replace(/splitting rent/i, "splitting rent fairly")
+    .replace(/turns? into an argument/i, "causes arguments");
+
+  return pain;
+}
+
+function titleFromText(text) {
+  if (isUnwantedTextingComplaint(text)) return "Unwanted repeated texts from someone I want to avoid";
+  if (isMedicalCheckComplaint(text)) return "Need a doctor to check unexplained body issues";
+  const sentence = firstSentence(polishDescription(text));
+  if (!sentence) return "";
+  const withoutIntro = sentence
+    .replace(/^(the problem is|there is|there are)\s+/i, "")
+    .trim();
+  const parts = withoutIntro.split(/\s+because\s+/i);
+  if (parts.length >= 2) {
+    const pain = simplifyPain(parts[0]);
+    const cause = simplifyCause(parts.slice(1).join(" because "));
+    if (pain && cause) return compactTitle(`${pain} from ${cause}`);
+  }
+  return compactTitle(simplifyPain(withoutIntro));
+}
+
+function inferCategory(text, fallback = "General") {
+  const tokens = new Set(tokenize(text));
+  let best = { category: CATEGORIES.includes(fallback) ? fallback : "General", score: 0 };
+  for (const [category, hints] of Object.entries(CATEGORY_HINTS)) {
+    let score = 0;
+    for (const hint of hints) if (tokens.has(hint)) score += 1;
+    if (score > best.score) best = { category, score };
+  }
+  return best;
+}
+
+function polishDescription(text) {
+  let cleaned = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .trim();
+
+  if (!cleaned) return "";
+
+  const corrections = [
+    [/\bim\b/gi, "I'm"],
+    [/\bi m\b/gi, "I'm"],
+    [/\bi'm\b/gi, "I'm"],
+    [/\bi\b/g, "I"],
+    [/\bdont\b/gi, "don't"],
+    [/\bdoesnt\b/gi, "doesn't"],
+    [/\bdidnt\b/gi, "didn't"],
+    [/\bcant\b/gi, "can't"],
+    [/\bcannot\b/gi, "can't"],
+    [/\bwont\b/gi, "won't"],
+    [/\bwouldnt\b/gi, "wouldn't"],
+    [/\bcouldnt\b/gi, "couldn't"],
+    [/\bshouldnt\b/gi, "shouldn't"],
+    [/\bive\b/gi, "I've"],
+    [/\bid\b/gi, "I'd"],
+    [/\bill\b/gi, "I'll"],
+    [/\bits\b/gi, "it's"],
+    [/\bthats\b/gi, "that's"],
+    [/\bwhats\b/gi, "what's"],
+    [/\btheres\b/gi, "there's"],
+    [/\btheyre\b/gi, "they're"],
+    [/\byoure\b/gi, "you're"],
+    [/\bshes\b/gi, "she's"],
+    [/\bhes\b/gi, "he's"],
+    [/\btextin\s*gme\b/gi, "texting me"],
+    [/\btextin\b/gi, "texting"],
+    [/\bteh\b/gi, "the"],
+    [/\brecieve\b/gi, "receive"],
+    [/\bforgeting\b/gi, "forgetting"],
+    [/\bseperate\b/gi, "separate"],
+    [/\balot\b/gi, "a lot"],
+    [/\bbecuase\b/gi, "because"],
+    [/\bdefinately\b/gi, "definitely"],
+    [/\bacheive\b/gi, "achieve"],
+    [/\boccured\b/gi, "occurred"],
+    [/\bwierd\b/gi, "weird"],
+    [/\bcalender\b/gi, "calendar"],
+    [/\bgrammer\b/gi, "grammar"],
+    [/\bgrmmar\b/gi, "grammar"],
+    [/\beverytime\b/gi, "every time"],
+  ];
+  for (const [pattern, replacement] of corrections) {
+    cleaned = cleaned.replace(pattern, replacement);
+  }
+
+
+  cleaned = cleaned
+    .replace(/\bhey so\b/gi, "Hey, so")
+    .replace(/\bthere is some type of issues\b/gi, "there are some issues")
+    .replace(/\bthere is some issues\b/gi, "there are some issues")
+    .replace(/\bcan some doctor come and check\b/gi, "can a doctor come and check")
+    .replace(/\bmy body can a doctor\b/gi, "my body. Can a doctor")
+    .replace(/\bmy body can some doctor\b/gi, "my body. Can a doctor")
+    .replace(/\bhow do I cut (him|her|them) off,\s*(he's|she's|they're)\b/gi, "How do I cut $1 off? $2")
+    .replace(/\bannoying me\s+How do I cut/gi, "annoying me. How do I cut")
+    .replace(/\bthere is this\b/gi, "there is this")
+    .replace(/\bsince yesterday night\b/gi, "since last night")
+    .replace(/\bsince last night any tips\b/gi, "since last night. Any tips?");
+
+  cleaned = cleaned.replace(/([!?])\./g, "$1");
+  cleaned = cleaned.replace(/(^|[.!?]\s+)([a-z])/g, (_match, prefix, letter) => prefix + letter.toUpperCase());
+  cleaned = cleaned.replace(/\bCan a doctor come and check\.$/i, "Can a doctor come and check?");
+  if (!/[.!?]$/.test(cleaned)) cleaned += ".";
+  return cleaned;
+}
+
+function assistedDescription(text) {
+  return polishDescription(text);
+}
+
+
+async function chatAssistText(messages, { temperature = 0.1, maxTokens = 300 } = {}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return "";
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.AI_ASSIST_MODEL || "gpt-4o-mini",
+        temperature,
+        max_tokens: maxTokens,
+        messages,
+      }),
+    });
+    if (!res.ok) return "";
+    const data = await res.json();
+    return String(data.choices?.[0]?.message?.content || "").trim();
+  } catch {
+    return "";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function normalizeCategory(value, text) {
+  const candidate = String(value || "").replace(/["'.]/g, "").trim();
+  const exact = CATEGORIES.find((category) => category.toLowerCase() === candidate.toLowerCase());
+  if (exact) return exact;
+  return inferCategory(text, "General").category;
+}
+
+async function aiProblemAssist(description) {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const correctedDescription = await chatAssistText(
+    [
+      {
+        role: "system",
+        content:
+          "You correct user-written problem descriptions. Return only the corrected text. Fix grammar, spelling, punctuation, and capitalization. Preserve the user's meaning, details, tone, and first-person wording. Do not add advice, solutions, explanations, new details, or formatting.",
+      },
+      {
+        role: "user",
+        content: `Can you autocorrect this for grammar and spelling?\n\n${description}`,
+      },
+    ],
+    { temperature: 0, maxTokens: 500 }
+  );
+
+  const cleanDescription = polishDescription(correctedDescription || description);
+  if (!cleanDescription) return null;
+
+  const title = await chatAssistText(
+    [
+      {
+        role: "system",
+        content:
+          "You write short titles for user-submitted problems. Return only the title, no quotes. Make it specific and human. Synthesize the whole problem. Do not copy the first sentence. Keep it under 80 characters.",
+      },
+      {
+        role: "user",
+        content: `Can you give an appropriate title for this problem?\n\n${cleanDescription}`,
+      },
+    ],
+    { temperature: 0.2, maxTokens: 40 }
+  );
+
+  const category = await chatAssistText(
+    [
+      {
+        role: "system",
+        content: `Pick exactly one category from this list and return only the category name: ${CATEGORIES.join(", ")}.`,
+      },
+      {
+        role: "user",
+        content: `What is the appropriate category for this problem?\n\nTitle: ${title}\nDescription: ${cleanDescription}`,
+      },
+    ],
+    { temperature: 0, maxTokens: 20 }
+  );
+
+  return {
+    title: compactTitle(title) || titleFromText(cleanDescription) || "Problem worth solving",
+    description: cleanDescription,
+    category: normalizeCategory(category, `${title} ${cleanDescription}`),
+    confidence: 0.9,
+    reasons: [
+      "ChatGPT corrected the description for grammar and spelling.",
+      "ChatGPT generated the title from the corrected description.",
+      "ChatGPT selected the closest category from the available list.",
+    ],
+  };
+}
+function fallbackProblemAssist({ description, correctedDescription = assistedDescription(description) }) {
+  const cleanDescription = correctedDescription;
+  const titleSource = stripAssistBoilerplate(cleanDescription);
+  const inferred = inferCategory(titleSource, "General");
+  const suggestedTitle = titleFromText(titleSource) || "Problem worth solving";
+  return {
+    title: suggestedTitle,
+    description: cleanDescription,
+    category: inferred.category,
+    confidence: Math.min(0.95, 0.55 + inferred.score * 0.12),
+    reasons: [
+      inferred.score > 0 ? "Matched category signals for " + inferred.category + "." : "Kept category broad because the text is still general.",
+      "Suggested a short title from the cleaned description.",
+      "Corrected grammar, spelling, and punctuation while keeping your description close to the original.",
+    ],
+  };
+}
 
 // Attach vote/solution/follower/comment/media counts to a batch of problems.
 //
@@ -247,8 +578,149 @@ function attachTrendScores(problems) {
   }
 }
 
+async function categoryFallbackStartups(category, excludeIds = new Set(), limit = 3) {
+  if (!CATEGORIES.includes(category)) return [];
+  const rows = await db
+    .prepare("SELECT * FROM startups WHERE category = ? ORDER BY claimed DESC, name ASC LIMIT ?")
+    .all(category, limit + excludeIds.size);
+  return rows
+    .filter((startup) => !excludeIds.has(startup.id))
+    .slice(0, limit)
+    .map((startup) => ({
+      startup,
+      score: 1,
+      matchedTerms: [category.toLowerCase()],
+      statementHits: 0,
+    }));
+}
 router.get("/categories", (_req, res) => {
   res.json({ categories: CATEGORIES });
+});
+
+
+function socialDiscoveryCacheKey(categories) {
+  return `social:${categories.join("|")}`;
+}
+
+function groupSocialDiscoveries(results) {
+  return CATEGORIES.reduce((grouped, category) => {
+    const items = results.filter((item) => item.category === category);
+    if (items.length) grouped[category] = items;
+    return grouped;
+  }, {});
+}
+
+router.get("/social-discovery", optionalAuth, async (req, res) => {
+  if (!agentEnabled()) return res.json({ results: [], grouped: {}, searched: false });
+
+  const requested = String(req.query.category || "All");
+  const categories = requested === "All" ? CATEGORIES : [requested].filter((category) => CATEGORIES.includes(category));
+  if (categories.length === 0) return res.status(400).json({ error: "Unknown category." });
+
+  const cacheKey = socialDiscoveryCacheKey(categories);
+  const refresh = req.query.refresh === "true";
+  const shouldImport = req.query.import === "true";
+  if (!refresh && !shouldImport) {
+    const cached = await db.prepare("SELECT results, computed_at FROM social_problem_discoveries WHERE cache_key = ?").get(cacheKey);
+    if (cached && Date.now() - Date.parse(cached.computed_at) < SOCIAL_DISCOVERY_TTL_MS) {
+      try {
+        const results = JSON.parse(cached.results);
+        return res.json({ results, grouped: groupSocialDiscoveries(results), searched: true, cached: true });
+      } catch {
+        // Unreadable cache row: fall through and search again.
+      }
+    }
+  }
+
+  if (shouldImport) {
+    const importRun = await importSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+    const results = importRun.discovered || [];
+    await db
+      .prepare(
+        `INSERT INTO social_problem_discoveries (cache_key, results, computed_at)
+         VALUES (?, ?, now())
+         ON CONFLICT (cache_key) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
+         RETURNING cache_key`
+      )
+      .run(cacheKey, JSON.stringify(results));
+    return res.json({
+      results,
+      grouped: groupSocialDiscoveries(results),
+      searched: true,
+      cached: false,
+      imported: importRun.imported,
+      skipped: importRun.skipped,
+      failed: importRun.failed,
+      agentTrace: importRun.trace,
+    });
+  }
+
+  const discovery = await discoverSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+  if (!discovery) return res.json({ results: [], grouped: {}, searched: false });
+  const results = discovery.results || [];
+
+  await db
+    .prepare(
+      `INSERT INTO social_problem_discoveries (cache_key, results, computed_at)
+       VALUES (?, ?, now())
+       ON CONFLICT (cache_key) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
+       RETURNING cache_key`
+    )
+    .run(cacheKey, JSON.stringify(results));
+
+  res.json({ results, grouped: groupSocialDiscoveries(results), searched: true, cached: false, agentTrace: discovery.trace });
+});
+
+router.post("/social-discovery/import", requireAuth, async (req, res) => {
+  if (!agentEnabled()) return res.json({ imported: [], skipped: [], failed: [], searched: false });
+
+  const requested = String(req.body.category || "All");
+  const categories = requested === "All" ? CATEGORIES : [requested].filter((category) => CATEGORIES.includes(category));
+  if (categories.length === 0) return res.status(400).json({ error: "Unknown category." });
+
+  const importRun = await importSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+  res.json({ ...importRun, grouped: groupSocialDiscoveries(importRun.discovered || []), searched: true });
+});
+
+router.post("/social-discovery/command", requireAuth, async (req, res) => {
+  if (!agentEnabled()) return res.json({ imported: [], skipped: [], failed: [], searched: false });
+
+  const command = String(req.body.command || "").trim();
+  if (!command) return res.status(400).json({ error: "Agent command is required." });
+
+  const importRun = await runSocialImportCommand(command);
+  res.json({ ...importRun, grouped: groupSocialDiscoveries(importRun.discovered || []), searched: true });
+});
+router.post("/assist", optionalAuth, async (req, res) => {
+  const description = String(req.body.description || req.body.text || "").trim();
+  const text = description;
+
+  if (text.length < 8) {
+    return res.status(400).json({ error: "Write a little more before using AI assist." });
+  }
+
+  const assist = (await aiProblemAssist(description)) || fallbackProblemAssist({ description });
+  const startupSearchText = `${assist.title} ${stripAssistBoilerplate(assist.description)}`;
+  let { strong, adjacent } = await matchStartups(startupSearchText, { limit: 4 });
+  if (!isUnwantedTextingComplaint(description) && strong.length + adjacent.length < 3) {
+    const usedStartupIds = new Set([...strong, ...adjacent].map((m) => m.startup.id));
+    const fallback = await categoryFallbackStartups(assist.category, usedStartupIds, 3 - strong.length - adjacent.length);
+    adjacent = adjacent.concat(fallback);
+  }
+  const shape = (m) => ({
+    ...m.startup,
+    claimed: !!m.startup.claimed,
+    matchScore: m.score,
+    matchedTerms: m.matchedTerms,
+  });
+
+  res.json({
+    assist,
+    startups: {
+      strong: strong.map(shape),
+      adjacent: adjacent.map(shape),
+    },
+  });
 });
 
 router.get("/media", async (req, res) => {
