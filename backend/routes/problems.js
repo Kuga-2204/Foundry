@@ -239,45 +239,13 @@ function assistedDescription(text) {
   return polishDescription(text);
 }
 
-function validateAssistShape(candidate) {
-  if (!candidate || typeof candidate !== "object") return null;
-  const title = compactTitle(candidate.title || "");
-  const description = polishDescription(candidate.description || "");
-  const category = CATEGORIES.includes(candidate.category) ? candidate.category : inferCategory(stripAssistBoilerplate(description), "General").category;
-  if (!title || !description) return null;
-  return {
-    title,
-    description,
-    category,
-    confidence: 0.9,
-    reasons: [
-      "Corrected grammar, spelling, and punctuation in the description.",
-      "Generated a concise title from the full description instead of copying the first sentence.",
-      "Selected the closest category from the available list.",
-    ],
-  };
-}
 
-function parseJsonObject(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    const match = String(text || "").match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      return JSON.parse(match[0]);
-    } catch {
-      return null;
-    }
-  }
-}
-
-async function aiProblemAssist(description) {
+async function chatAssistText(messages, { temperature = 0.1, maxTokens = 300 } = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) return "";
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -288,29 +256,89 @@ async function aiProblemAssist(description) {
       },
       body: JSON.stringify({
         model: process.env.AI_ASSIST_MODEL || "gpt-4o-mini",
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are Solvyard AI Assist. Return only valid JSON with title, description, and category. Correct the user description for grammar, spelling, punctuation, and capitalization only. Preserve the user's meaning, details, tone, and first-person wording. Do not add advice, solutions, causes, new needs, examples, or any facts the user did not write. Generate a concise, human title by synthesizing the full corrected description; do not copy the first sentence. Pick exactly one category from: " + CATEGORIES.join(", ") + ".",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({ rawDescription: description }),
-          },
-        ],
+        temperature,
+        max_tokens: maxTokens,
+        messages,
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return "";
     const data = await res.json();
-    return validateAssistShape(parseJsonObject(data.choices?.[0]?.message?.content));
+    return String(data.choices?.[0]?.message?.content || "").trim();
   } catch {
-    return null;
+    return "";
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizeCategory(value, text) {
+  const candidate = String(value || "").replace(/["'.]/g, "").trim();
+  const exact = CATEGORIES.find((category) => category.toLowerCase() === candidate.toLowerCase());
+  if (exact) return exact;
+  return inferCategory(text, "General").category;
+}
+
+async function aiProblemAssist(description) {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const correctedDescription = await chatAssistText(
+    [
+      {
+        role: "system",
+        content:
+          "You correct user-written problem descriptions. Return only the corrected text. Fix grammar, spelling, punctuation, and capitalization. Preserve the user's meaning, details, tone, and first-person wording. Do not add advice, solutions, explanations, new details, or formatting.",
+      },
+      {
+        role: "user",
+        content: `Can you autocorrect this for grammar and spelling?\n\n${description}`,
+      },
+    ],
+    { temperature: 0, maxTokens: 500 }
+  );
+
+  const cleanDescription = polishDescription(correctedDescription || description);
+  if (!cleanDescription) return null;
+
+  const title = await chatAssistText(
+    [
+      {
+        role: "system",
+        content:
+          "You write short titles for user-submitted problems. Return only the title, no quotes. Make it specific and human. Synthesize the whole problem. Do not copy the first sentence. Keep it under 80 characters.",
+      },
+      {
+        role: "user",
+        content: `Can you give an appropriate title for this problem?\n\n${cleanDescription}`,
+      },
+    ],
+    { temperature: 0.2, maxTokens: 40 }
+  );
+
+  const category = await chatAssistText(
+    [
+      {
+        role: "system",
+        content: `Pick exactly one category from this list and return only the category name: ${CATEGORIES.join(", ")}.`,
+      },
+      {
+        role: "user",
+        content: `What is the appropriate category for this problem?\n\nTitle: ${title}\nDescription: ${cleanDescription}`,
+      },
+    ],
+    { temperature: 0, maxTokens: 20 }
+  );
+
+  return {
+    title: compactTitle(title) || titleFromText(cleanDescription) || "Problem worth solving",
+    description: cleanDescription,
+    category: normalizeCategory(category, `${title} ${cleanDescription}`),
+    confidence: 0.9,
+    reasons: [
+      "ChatGPT corrected the description for grammar and spelling.",
+      "ChatGPT generated the title from the corrected description.",
+      "ChatGPT selected the closest category from the available list.",
+    ],
+  };
 }
 function fallbackProblemAssist({ description, correctedDescription = assistedDescription(description) }) {
   const cleanDescription = correctedDescription;
