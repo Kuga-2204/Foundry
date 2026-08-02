@@ -22,9 +22,15 @@ export default function StartupCard({ startup, matched = false }) {
         )}
       </div>
 
+      {matched && startup.whyItMatches && (
+        <p style={styles.why}>{startup.whyItMatches}</p>
+      )}
+
       <div style={styles.footer}>
         <span className="mono" style={styles.category}>{startup.category}</span>
-        {matched && startup.matchedTerms?.length > 0 && (
+        {/* The matched-term list is the raw keyword signal. Once the agent has
+            written a reason, that sentence says the same thing better. */}
+        {matched && !startup.whyItMatches && startup.matchedTerms?.length > 0 && (
           <span style={styles.matchTerms}>
             matches: {startup.matchedTerms.slice(0, 4).join(", ")}
           </span>
@@ -54,6 +60,10 @@ const styles = {
     padding: "2px 7px", borderRadius: 2, letterSpacing: 0.4,
   },
   tagline: { fontSize: 13.5, color: "var(--text-dim)", lineHeight: 1.45 },
+  why: {
+    fontSize: 13.5, lineHeight: 1.5, color: "var(--text)", marginBottom: 10,
+    paddingLeft: 10, borderLeft: "2px solid var(--build)",
+  },
   footer: { display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" },
   category: {
     fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.5,

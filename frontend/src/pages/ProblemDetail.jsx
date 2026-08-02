@@ -165,6 +165,11 @@ export default function ProblemDetail() {
     );
   if (!problem) return null;
 
+  // Only a startup that actually solves the problem counts as an answer. An
+  // "adjacent" match is the agent saying it does not solve this, and it is not
+  // shown above, so the page would otherwise be empty.
+  const directoryEmpty = matches.strong.length === 0;
+
   return (
     <div className="wrap" style={styles.wrap}>
       <Link to="/problems" style={styles.back}>← Back to problems</Link>
@@ -288,6 +293,8 @@ export default function ProblemDetail() {
         </>
       )}
 
+      <WebMatches problemId={id} directoryEmpty={directoryEmpty} />
+
       {user && myStartups.length > 0 && (
         <StartupActions
           problem={problem}
@@ -360,6 +367,71 @@ export default function ProblemDetail() {
       )}
 
       <Discussion problemId={id} user={user} token={token} myStartups={myStartups} />
+    </div>
+  );
+}
+
+// Products found on the open web, shown only when the directory came up empty.
+// Deliberately kept apart from the matched startups above: these are links, so
+// nothing here can commit to building, ship to followers, or be reviewed.
+// The search is slow, so this loads on its own after the page has rendered.
+function WebMatches({ problemId, directoryEmpty }) {
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!directoryEmpty) return;
+    let live = true;
+    setSearching(true);
+    api
+      .problemWebMatches(problemId)
+      .then((d) => {
+        if (!live) return;
+        setResults(d.results || []);
+        setDone(true);
+      })
+      .catch(() => live && setDone(true))
+      .finally(() => live && setSearching(false));
+    return () => {
+      live = false;
+    };
+  }, [problemId, directoryEmpty]);
+
+  if (!directoryEmpty) return null;
+  if (!searching && results.length === 0 && done) return null;
+
+  return (
+    <div style={{ marginTop: 30 }}>
+      <h2 style={styles.h2}>Also found on the web</h2>
+      <p style={styles.hint}>
+        No startup on Solvyard solves this yet, so we looked outside the directory. These
+        are not Solvyard listings: they cannot commit to your problem or be reviewed here.
+      </p>
+
+      {searching ? (
+        <div style={styles.webSearching}>
+          Searching the web for something that solves this. This takes a moment.
+        </div>
+      ) : (
+        results.map((r) => (
+          <a
+            key={r.url}
+            href={r.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="card"
+            style={styles.webCard}
+          >
+            <div style={styles.webHead}>
+              <span style={styles.webName}>{r.name}</span>
+              <span className="mono" style={styles.webBadge}>FROM THE WEB</span>
+            </div>
+            <p style={styles.webDesc}>{r.description}</p>
+            <span style={styles.webLink}>{new URL(r.url).hostname.replace(/^www\./, "")} ↗</span>
+          </a>
+        ))
+      )}
     </div>
   );
 }
@@ -1061,6 +1133,19 @@ const styles = {
   commentDate: { fontSize: 11.5, color: "var(--text-dim)" },
   commentHeadRight: { display: "flex", alignItems: "center", gap: 10 },
   authorLink: { fontWeight: 600, color: "var(--ink)" },
+  webSearching: {
+    padding: "18px 20px", border: "1.5px dashed var(--line)", borderRadius: 4,
+    fontSize: 13.5, color: "var(--text-dim)",
+  },
+  webCard: { display: "block", padding: 18, marginBottom: 12 },
+  webHead: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 },
+  webName: { fontFamily: "var(--display)", fontSize: 17, fontWeight: 600, color: "var(--ink)" },
+  webBadge: {
+    fontSize: 9.5, fontWeight: 600, letterSpacing: 0.8, color: "var(--text-dim)",
+    border: "1.5px solid var(--line)", borderRadius: 2, padding: "1px 6px",
+  },
+  webDesc: { fontSize: 13.5, lineHeight: 1.5, color: "var(--text)", marginBottom: 8 },
+  webLink: { fontSize: 12.5, fontWeight: 600, color: "var(--build)" },
   embedWrap: { marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 12 },
   embedToggle: {
     background: "none", border: "none", padding: 0, cursor: "pointer",

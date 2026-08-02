@@ -52,6 +52,7 @@ export const api = {
   similarProblems: (text, token) =>
     request("/problems/similar", { method: "POST", body: { text }, token }),
   problemMatches: (id) => request(`/problems/${id}/matches`),
+  problemWebMatches: (id) => request(`/problems/${id}/web-matches`),
   listComments: (problemId, token) => request(`/problems/${problemId}/comments`, { token }),
   postComment: (problemId, payload, token) =>
     request(`/problems/${problemId}/comments`, { method: "POST", body: payload, token }),
