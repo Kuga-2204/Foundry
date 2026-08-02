@@ -12,6 +12,7 @@ import {
 import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
+import { agentEnabled, judgeMatches, searchWeb, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
 
 const router = Router();
 
@@ -558,7 +559,9 @@ router.post("/", requireAuth, uploadMedia, async (req, res) => {
     );
   }
 
-  res.status(201).json({ problem: await getFullProblem(problemId, req.userId) });
+  const created = await getFullProblem(problemId, req.userId);
+  prefetchWebMatches({ id: problemId, title: title.trim(), description: description.trim() });
+  res.status(201).json({ problem: created });
 });
 
 router.get("/:id", optionalAuth, async (req, res) => {
@@ -598,8 +601,13 @@ router.put("/:id", requireAuth, async (req, res) => {
   await db
     .prepare("UPDATE problems SET title = ?, description = ?, category = ?, edited_at = now() WHERE id = ?")
     .run(newTitle, newDescription, cat, req.params.id);
+  // The agent ruled on the old wording; those results no longer apply.
+  await db.prepare("DELETE FROM problem_match_verdicts WHERE problem_id = ?").run(req.params.id);
+  await db.prepare("DELETE FROM problem_web_matches WHERE problem_id = ?").run(req.params.id);
 
-  res.json({ problem: await getFullProblem(req.params.id, req.userId) });
+  const updated = await getFullProblem(req.params.id, req.userId);
+  prefetchWebMatches({ id: problem.id, title: newTitle, description: newDescription });
+  res.json({ problem: updated });
 });
 
 // Delete a problem. Only the person who posted it can remove it. Votes,
@@ -615,10 +623,54 @@ router.delete("/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Startups that likely already solve this problem.
-router.get("/:id/matches", async (req, res) => {
-  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
-  if (!problem) return res.status(404).json({ error: "Problem not found." });
+// One model call per problem is affordable; one per page view is not. Verdicts
+// are cached until they age out or the poster edits the problem out from under
+// them. A cache miss that the agent can't serve just falls through to keywords.
+async function verdictsFor(problem, candidates) {
+  const cached = await db
+    .prepare("SELECT verdicts, computed_at FROM problem_match_verdicts WHERE problem_id = ?")
+    .get(problem.id);
+  if (cached && Date.now() - Date.parse(cached.computed_at) < VERDICT_TTL_MS) {
+    try {
+      return new Map(JSON.parse(cached.verdicts));
+    } catch {
+      // Unreadable cache row: fall through and recompute.
+    }
+  }
+
+  const ids = candidates.map((m) => m.startup.id);
+  const rows = await db
+    .prepare("SELECT startup_id, statement FROM startup_statements WHERE startup_id = ANY(?::int[])")
+    .all(ids);
+  const statements = new Map();
+  for (const r of rows) {
+    if (!statements.has(r.startup_id)) statements.set(r.startup_id, []);
+    statements.get(r.startup_id).push(r.statement);
+  }
+
+  const verdicts = await judgeMatches(
+    problem,
+    candidates.map((m) => ({ ...m.startup, statements: statements.get(m.startup.id) || [] }))
+  );
+  if (!verdicts) return null;
+
+  await db
+    .prepare(
+      `INSERT INTO problem_match_verdicts (problem_id, verdicts, computed_at)
+       VALUES (?, ?, now())
+       ON CONFLICT (problem_id) DO UPDATE SET verdicts = EXCLUDED.verdicts, computed_at = now()
+       RETURNING problem_id`
+    )
+    .run(problem.id, JSON.stringify([...verdicts]));
+
+  return verdicts;
+}
+
+// Startups that likely already solve this problem. Keyword recall builds the
+// shortlist; the matching agent then rules on which of those actually solve it
+// and supplies the reason shown on the card. Without the agent this returns
+// exactly what keyword matching alone returned.
+async function matchesForProblem(problem) {
   const { strong, adjacent } = await matchStartups(`${problem.title} ${problem.description}`);
   const shape = (m) => ({
     ...m.startup,
@@ -626,7 +678,98 @@ router.get("/:id/matches", async (req, res) => {
     matchScore: m.score,
     matchedTerms: m.matchedTerms,
   });
-  res.json({ strong: strong.map(shape), adjacent: adjacent.map(shape) });
+
+  const candidates = [...strong, ...adjacent];
+  const keywordOnly = { strong: strong.map(shape), adjacent: adjacent.map(shape) };
+  if (!agentEnabled() || candidates.length === 0) return keywordOnly;
+
+  const verdicts = await verdictsFor(problem, candidates);
+  if (!verdicts) return keywordOnly;
+
+  const judged = { strong: [], adjacent: [], judged: true };
+  for (const m of candidates) {
+    const v = verdicts.get(m.startup.id);
+    if (!v || v.verdict === "unrelated") continue;
+    const card = { ...shape(m), whyItMatches: v.reason };
+    judged[v.verdict === "solves" ? "strong" : "adjacent"].push(card);
+  }
+  return judged;
+}
+
+router.get("/:id/matches", async (req, res) => {
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+  res.json(await matchesForProblem(problem));
+});
+
+async function cacheWebMatches(problemId, results) {
+  await db
+    .prepare(
+      `INSERT INTO problem_web_matches (problem_id, results, computed_at)
+       VALUES (?, ?, now())
+       ON CONFLICT (problem_id) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
+       RETURNING problem_id`
+    )
+    .run(problemId, JSON.stringify(results));
+}
+
+// A live web search takes roughly twenty seconds, so it is started the moment a
+// problem is posted rather than when someone opens it. By the time anyone
+// looks, the answer is already cached and the section renders instantly.
+//
+// Deliberately not awaited: the poster gets their redirect immediately, and a
+// failure here costs nothing because the route below will simply search on
+// demand instead.
+function prefetchWebMatches(problem) {
+  if (!agentEnabled()) return;
+  setImmediate(async () => {
+    try {
+      const directory = await matchesForProblem(problem);
+      if (directory.strong.length > 0) return;
+      const results = await searchWeb(problem);
+      if (results) await cacheWebMatches(problem.id, results);
+    } catch (err) {
+      console.error("web prefetch failed:", err.message);
+    }
+  });
+}
+
+// Products from the open web, for problems the directory cannot answer. Kept
+// on its own route because a live web search takes far longer than a page
+// load should: /matches stays fast and this fills in behind it.
+//
+// These are links, not listings. Nothing here can commit to building, ship to
+// followers, or be reviewed, so the frontend keeps them in their own section.
+router.get("/:id/web-matches", async (req, res) => {
+  const problem = await db.prepare("SELECT * FROM problems WHERE id = ?").get(req.params.id);
+  if (!problem) return res.status(404).json({ error: "Problem not found." });
+  if (!agentEnabled()) return res.json({ results: [], searched: false });
+
+  const cached = await db
+    .prepare("SELECT results, computed_at FROM problem_web_matches WHERE problem_id = ?")
+    .get(problem.id);
+  if (cached && Date.now() - Date.parse(cached.computed_at) < WEB_TTL_MS) {
+    try {
+      return res.json({ results: JSON.parse(cached.results), searched: true, cached: true });
+    } catch {
+      // Unreadable cache row: fall through and search again.
+    }
+  }
+
+  // The web is the fallback, not a parallel answer. Only a startup that
+  // actually solves the problem stops the search: an "adjacent" ruling means
+  // the agent decided that startup does not solve it, which is precisely when
+  // looking further afield is worth doing.
+  const directory = await matchesForProblem(problem);
+  if (directory.strong.length > 0) {
+    return res.json({ results: [], searched: false, reason: "directory-has-matches" });
+  }
+
+  const results = await searchWeb(problem);
+  if (!results) return res.json({ results: [], searched: false });
+
+  await cacheWebMatches(problem.id, results);
+  res.json({ results, searched: true });
 });
 
 // Vote: 1 (up) or -1 (down). Same type again removes the vote (toggle).
