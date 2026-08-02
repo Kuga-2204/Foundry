@@ -268,6 +268,14 @@ CREATE TABLE IF NOT EXISTS problem_web_matches (
   results TEXT NOT NULL,
   computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Cached social listening results. The discovery agent searches current public
+-- posts source-by-source and category-by-category, so cache keys encode the
+-- selected category scope and source set.
+CREATE TABLE IF NOT EXISTS social_problem_discoveries (
+  cache_key TEXT PRIMARY KEY,
+  results TEXT NOT NULL,
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS comment_likes (
   id SERIAL PRIMARY KEY,

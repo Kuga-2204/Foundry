@@ -216,6 +216,150 @@ export async function searchWeb(problem) {
   }
 }
 
+
+export const SOCIAL_DISCOVERY_TTL_MS = 6 * 60 * 60 * 1000;
+
+const SOCIAL_SOURCES = [
+  { name: "Reddit", query: "site:reddit.com" },
+  { name: "X", query: "site:x.com OR site:twitter.com" },
+  { name: "LinkedIn", query: "site:linkedin.com/posts OR site:linkedin.com/feed" },
+  { name: "Hacker News", query: "site:news.ycombinator.com/item" },
+  { name: "Quora", query: "site:quora.com" },
+];
+
+const SOCIAL_SCHEMA = {
+  type: "object",
+  properties: {
+    problems: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          category: { type: "string" },
+          source: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+          evidence: { type: "string" },
+          url: { type: "string" },
+          posted_at: { type: "string" },
+        },
+        required: ["category", "source", "title", "description", "evidence", "url", "posted_at"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["problems"],
+  additionalProperties: false,
+};
+
+function sourceHostAllowed(url, source) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    if (source === "Reddit") return host.endsWith("reddit.com");
+    if (source === "X") return host === "x.com" || host === "twitter.com" || host.endsWith("twitter.com");
+    if (source === "LinkedIn") return host.endsWith("linkedin.com");
+    if (source === "Hacker News") return host === "news.ycombinator.com";
+    if (source === "Quora") return host.endsWith("quora.com");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function trimText(text, max) {
+  const cleaned = clean(text);
+  if (cleaned.length <= max) return cleaned;
+  const cut = cleaned.slice(0, max - 3);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trim()}...`;
+}
+function cleanSocialProblem(problem, category, source) {
+  const url = tidyCitationUrl(problem.url);
+  if (!url || !sourceHostAllowed(url, source)) return null;
+  const title = trimText(problem.title, 90).replace(/^problem:\s*/i, "");
+  const description = trimText(problem.description, 320);
+  const evidence = trimText(problem.evidence, 220);
+  if (!title || !description) return null;
+  return {
+    category,
+    source,
+    title,
+    description,
+    evidence,
+    url,
+    posted_at: clean(problem.posted_at) || "Recent",
+  };
+}
+
+function tidyCitationUrl(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (!/^https?:$/.test(url.protocol)) return null;
+  url.hash = "";
+  return url.toString();
+}
+
+async function discoverFromSource(categories, source, perCategory) {
+  const scopedCategories = categories.join(", ");
+  const query = `${source.query} (${scopedCategories}) latest user complaints OR problems OR "I hate" OR "struggling with" OR "does anyone else" after:2025-01-01`;
+  const response = await client.responses.create({
+    model: MODEL,
+    tools: [{ type: "web_search", search_context_size: "low" }],
+    tool_choice: { type: "web_search" },
+    reasoning: { effort: "low" },
+    instructions: `You are a social listening agent for Solvyard. Search the assigned source for recent public posts where real people complain about unsolved, painful, repeated problems. Extract problems, not products, not news, and not startup ideas. Only use the assigned source. Cover every requested category when search results exist. Return at most ${perCategory} item per category. Prefer posts from the last 30 days; if exact dates are unavailable, use recent indexed results. Each item must include a source URL from the assigned source. Category must be exactly one of: ${scopedCategories}. Source must be exactly: ${source.name}.`,
+    input: `Assigned source: ${source.name}\nSearch query: ${query}\nCategories: ${scopedCategories}\n\nFind the latest user problems people are discussing for each category.`,
+    text: {
+      format: { type: "json_schema", name: "social_problem_discovery", schema: SOCIAL_SCHEMA, strict: true },
+    },
+  });
+
+  if (response.status !== "completed" || !response.output_text) return [];
+  const parsed = JSON.parse(response.output_text);
+  const problems = Array.isArray(parsed.problems) ? parsed.problems : [];
+  const allowed = new Set(categories);
+  const counts = new Map();
+  const cleaned = [];
+  for (const problem of problems) {
+    const category = allowed.has(problem.category) ? problem.category : categories[0];
+    const count = counts.get(category) || 0;
+    if (count >= perCategory) continue;
+    const item = cleanSocialProblem(problem, category, source.name);
+    if (!item) continue;
+    counts.set(category, count + 1);
+    cleaned.push(item);
+  }
+  return cleaned;
+}
+
+export async function discoverSocialProblems(categories, { perCategory = 1, sources = SOCIAL_SOURCES } = {}) {
+  if (!client) return null;
+
+  const scopedCategories = [...new Set((categories || []).filter(Boolean))];
+  const batches = await Promise.all(
+    sources.map(async (source) => {
+      try {
+        return await discoverFromSource(scopedCategories, source, perCategory);
+      } catch (err) {
+        console.error(`social discovery failed for ${source.name}:`, err.message);
+        return [];
+      }
+    })
+  );
+  const results = batches.flat();
+
+  const seen = new Set();
+  return results.filter((item) => {
+    const key = `${item.source}:${item.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 // Judge a keyword shortlist. Returns a Map of startup_id -> {verdict, reason},
 // or null when the agent is off or the call did not produce a usable answer.
 // Never throws: matching must keep working when the model does not.

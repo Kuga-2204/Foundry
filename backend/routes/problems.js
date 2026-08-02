@@ -12,7 +12,7 @@ import {
 import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js";
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
-import { agentEnabled, judgeMatches, searchWeb, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
+import { agentEnabled, discoverSocialProblems, judgeMatches, searchWeb, SOCIAL_DISCOVERY_TTL_MS, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
 
 const router = Router();
 
@@ -596,6 +596,54 @@ router.get("/categories", (_req, res) => {
   res.json({ categories: CATEGORIES });
 });
 
+
+function socialDiscoveryCacheKey(categories) {
+  return `social:${categories.join("|")}`;
+}
+
+function groupSocialDiscoveries(results) {
+  return CATEGORIES.reduce((grouped, category) => {
+    const items = results.filter((item) => item.category === category);
+    if (items.length) grouped[category] = items;
+    return grouped;
+  }, {});
+}
+
+router.get("/social-discovery", optionalAuth, async (req, res) => {
+  if (!agentEnabled()) return res.json({ results: [], grouped: {}, searched: false });
+
+  const requested = String(req.query.category || "All");
+  const categories = requested === "All" ? CATEGORIES : [requested].filter((category) => CATEGORIES.includes(category));
+  if (categories.length === 0) return res.status(400).json({ error: "Unknown category." });
+
+  const cacheKey = socialDiscoveryCacheKey(categories);
+  const refresh = req.query.refresh === "true";
+  if (!refresh) {
+    const cached = await db.prepare("SELECT results, computed_at FROM social_problem_discoveries WHERE cache_key = ?").get(cacheKey);
+    if (cached && Date.now() - Date.parse(cached.computed_at) < SOCIAL_DISCOVERY_TTL_MS) {
+      try {
+        const results = JSON.parse(cached.results);
+        return res.json({ results, grouped: groupSocialDiscoveries(results), searched: true, cached: true });
+      } catch {
+        // Unreadable cache row: fall through and search again.
+      }
+    }
+  }
+
+  const results = await discoverSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+  if (!results) return res.json({ results: [], grouped: {}, searched: false });
+
+  await db
+    .prepare(
+      `INSERT INTO social_problem_discoveries (cache_key, results, computed_at)
+       VALUES (?, ?, now())
+       ON CONFLICT (cache_key) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
+       RETURNING cache_key`
+    )
+    .run(cacheKey, JSON.stringify(results));
+
+  res.json({ results, grouped: groupSocialDiscoveries(results), searched: true, cached: false });
+});
 router.post("/assist", optionalAuth, async (req, res) => {
   const description = String(req.body.description || req.body.text || "").trim();
   const text = description;

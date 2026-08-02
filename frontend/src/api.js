@@ -53,6 +53,10 @@ export const api = {
     request("/problems/similar", { method: "POST", body: { text }, token }),
   problemMatches: (id) => request(`/problems/${id}/matches`),
   problemWebMatches: (id) => request(`/problems/${id}/web-matches`),
+  socialProblemDiscovery: (params) => {
+    const qs = new URLSearchParams(params || {}).toString();
+    return request(`/problems/social-discovery${qs ? `?${qs}` : ""}`);
+  },
   listComments: (problemId, token) => request(`/problems/${problemId}/comments`, { token }),
   postComment: (problemId, payload, token) =>
     request(`/problems/${problemId}/comments`, { method: "POST", body: payload, token }),
