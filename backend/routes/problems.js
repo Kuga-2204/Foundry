@@ -239,10 +239,10 @@ function assistedDescription(text) {
   return polishDescription(text);
 }
 
-function validateAssistShape(candidate, correctedDescription) {
+function validateAssistShape(candidate) {
   if (!candidate || typeof candidate !== "object") return null;
   const title = compactTitle(candidate.title || "");
-  const description = correctedDescription || assistedDescription(candidate.description || "");
+  const description = polishDescription(candidate.description || "");
   const category = CATEGORIES.includes(candidate.category) ? candidate.category : inferCategory(stripAssistBoilerplate(description), "General").category;
   if (!title || !description) return null;
   return {
@@ -272,7 +272,7 @@ function parseJsonObject(text) {
   }
 }
 
-async function aiProblemAssist(description, correctedDescription = assistedDescription(description)) {
+async function aiProblemAssist(description) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
@@ -294,18 +294,18 @@ async function aiProblemAssist(description, correctedDescription = assistedDescr
           {
             role: "system",
             content:
-              "You help classify messy user problem descriptions for Solvyard. Return only JSON with title, description, category. The title must synthesize the full problem, not copy the first sentence. The server will preserve the user's description, so do not rewrite, summarize, advise, or add meaning in description. Category must be one of: " + CATEGORIES.join(", ") + ".",
+              "You are Solvyard AI Assist. Return only valid JSON with title, description, and category. Correct the user description for grammar, spelling, punctuation, and capitalization only. Preserve the user's meaning, details, tone, and first-person wording. Do not add advice, solutions, causes, new needs, examples, or any facts the user did not write. Generate a concise, human title by synthesizing the full corrected description; do not copy the first sentence. Pick exactly one category from: " + CATEGORIES.join(", ") + ".",
           },
           {
             role: "user",
-            content: JSON.stringify({ rawDescription: stripAssistBoilerplate(description), correctedDescription }),
+            content: JSON.stringify({ rawDescription: description }),
           },
         ],
       }),
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return validateAssistShape(parseJsonObject(data.choices?.[0]?.message?.content), correctedDescription);
+    return validateAssistShape(parseJsonObject(data.choices?.[0]?.message?.content));
   } catch {
     return null;
   } finally {
@@ -575,10 +575,8 @@ router.post("/assist", optionalAuth, async (req, res) => {
     return res.status(400).json({ error: "Write a little more before using AI assist." });
   }
 
-  const correctedDescription = assistedDescription(description);
-  const generatedAssist = (await aiProblemAssist(description, correctedDescription)) || fallbackProblemAssist({ description, correctedDescription });
-  const assist = { ...generatedAssist, description: correctedDescription };
-  const startupSearchText = `${assist.title} ${stripAssistBoilerplate(correctedDescription)}`;
+  const assist = (await aiProblemAssist(description)) || fallbackProblemAssist({ description });
+  const startupSearchText = `${assist.title} ${stripAssistBoilerplate(assist.description)}`;
   let { strong, adjacent } = await matchStartups(startupSearchText, { limit: 4 });
   if (!isUnwantedTextingComplaint(description) && strong.length + adjacent.length < 3) {
     const usedStartupIds = new Set([...strong, ...adjacent].map((m) => m.startup.id));
