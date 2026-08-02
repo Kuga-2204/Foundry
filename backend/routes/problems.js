@@ -13,6 +13,7 @@ import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
 import { agentEnabled, discoverSocialProblems, judgeMatches, searchWeb, SOCIAL_DISCOVERY_TTL_MS, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
+import { importSocialProblems } from "../lib/socialPostingAgent.js";
 
 const router = Router();
 
@@ -618,7 +619,8 @@ router.get("/social-discovery", optionalAuth, async (req, res) => {
 
   const cacheKey = socialDiscoveryCacheKey(categories);
   const refresh = req.query.refresh === "true";
-  if (!refresh) {
+  const shouldImport = req.query.import === "true";
+  if (!refresh && !shouldImport) {
     const cached = await db.prepare("SELECT results, computed_at FROM social_problem_discoveries WHERE cache_key = ?").get(cacheKey);
     if (cached && Date.now() - Date.parse(cached.computed_at) < SOCIAL_DISCOVERY_TTL_MS) {
       try {
@@ -628,6 +630,29 @@ router.get("/social-discovery", optionalAuth, async (req, res) => {
         // Unreadable cache row: fall through and search again.
       }
     }
+  }
+
+  if (shouldImport) {
+    const importRun = await importSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+    const results = importRun.discovered || [];
+    await db
+      .prepare(
+        `INSERT INTO social_problem_discoveries (cache_key, results, computed_at)
+         VALUES (?, ?, now())
+         ON CONFLICT (cache_key) DO UPDATE SET results = EXCLUDED.results, computed_at = now()
+         RETURNING cache_key`
+      )
+      .run(cacheKey, JSON.stringify(results));
+    return res.json({
+      results,
+      grouped: groupSocialDiscoveries(results),
+      searched: true,
+      cached: false,
+      imported: importRun.imported,
+      skipped: importRun.skipped,
+      failed: importRun.failed,
+      agentTrace: importRun.trace,
+    });
   }
 
   const discovery = await discoverSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
@@ -644,6 +669,17 @@ router.get("/social-discovery", optionalAuth, async (req, res) => {
     .run(cacheKey, JSON.stringify(results));
 
   res.json({ results, grouped: groupSocialDiscoveries(results), searched: true, cached: false, agentTrace: discovery.trace });
+});
+
+router.post("/social-discovery/import", requireAuth, async (req, res) => {
+  if (!agentEnabled()) return res.json({ imported: [], skipped: [], failed: [], searched: false });
+
+  const requested = String(req.body.category || "All");
+  const categories = requested === "All" ? CATEGORIES : [requested].filter((category) => CATEGORIES.includes(category));
+  if (categories.length === 0) return res.status(400).json({ error: "Unknown category." });
+
+  const importRun = await importSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+  res.json({ ...importRun, grouped: groupSocialDiscoveries(importRun.discovered || []), searched: true });
 });
 router.post("/assist", optionalAuth, async (req, res) => {
   const description = String(req.body.description || req.body.text || "").trim();

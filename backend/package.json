@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "seed": "node db/seed.js"
+    "seed": "node db/seed.js",
+    "agent:import-social": "node scripts/import-social-problems.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

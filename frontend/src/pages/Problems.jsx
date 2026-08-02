@@ -20,6 +20,7 @@ export default function Problems() {
   const [socialDiscovery, setSocialDiscovery] = useState({ results: [], grouped: {}, searched: false });
   const [socialLoading, setSocialLoading] = useState(false);
   const [socialError, setSocialError] = useState("");
+  const [socialMessage, setSocialMessage] = useState("");
 
   const sort = searchParams.get("sort") || "discover";
   const category = searchParams.get("category") || "All";
@@ -58,6 +59,26 @@ export default function Problems() {
       setSocialLoading(false);
     }
   }, [category]);
+
+  const importLatestSocialProblems = useCallback(async () => {
+    if (!token) {
+      setSocialError("Log in to import social problems as site posts.");
+      return;
+    }
+    setSocialLoading(true);
+    setSocialError("");
+    setSocialMessage("");
+    try {
+      const data = await api.importSocialProblems({ category }, token);
+      setSocialDiscovery({ results: data.discovered || [], grouped: data.grouped || {}, searched: true, cached: false, agentTrace: data.trace });
+      setSocialMessage(`Imported ${data.imported?.length || 0} new problem${(data.imported?.length || 0) === 1 ? "" : "s"}.`);
+      await load();
+    } catch (err) {
+      setSocialError(err.message);
+    } finally {
+      setSocialLoading(false);
+    }
+  }, [category, load, token]);
   useEffect(() => {
     api.categories().then((d) => setCategories(d.categories));
   }, []);
@@ -192,10 +213,11 @@ export default function Problems() {
               <span className="mono" style={styles.socialKicker}>SOCIAL RADAR</span>
               <h2 style={styles.socialTitle}>Latest problems people are talking about</h2>
             </div>
-            <button className="btn btn-sm" type="button" onClick={() => loadSocialDiscovery(true)} disabled={socialLoading}>
+            <button className="btn btn-sm" type="button" onClick={importLatestSocialProblems} disabled={socialLoading}>
               {socialLoading ? "Searching" : "Refresh"}
             </button>
           </div>
+          {socialMessage && <p style={styles.socialMuted}>{socialMessage}</p>}
           {socialError ? (
             <p style={styles.socialMuted}>{socialError}</p>
           ) : socialLoading && socialGroups.length === 0 ? (

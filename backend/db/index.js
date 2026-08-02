@@ -248,6 +248,11 @@ ALTER TABLE comments ADD COLUMN IF NOT EXISTS hidden INTEGER NOT NULL DEFAULT 0;
 -- posting. edited_at is null until the first edit, then stamped on every
 -- subsequent one; the frontend shows an "edited" tag whenever it's set.
 ALTER TABLE problems ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+ALTER TABLE problems ADD COLUMN IF NOT EXISTS source_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE problems ADD COLUMN IF NOT EXISTS source_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE problems ADD COLUMN IF NOT EXISTS source_evidence TEXT NOT NULL DEFAULT '';
+ALTER TABLE problems ADD COLUMN IF NOT EXISTS source_posted_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE problems ADD COLUMN IF NOT EXISTS source_imported_at TIMESTAMPTZ;
 ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 
 -- Cached rulings from the matching agent (lib/agent.js). Keyword recall runs
@@ -310,6 +315,7 @@ CREATE INDEX IF NOT EXISTS idx_commitments_startup ON commitments(startup_id);
 CREATE INDEX IF NOT EXISTS idx_statements_startup  ON startup_statements(startup_id);
 CREATE INDEX IF NOT EXISTS idx_problems_user       ON problems(user_id);
 CREATE INDEX IF NOT EXISTS idx_problems_created    ON problems(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_problems_source_url ON problems(source_url) WHERE source_url <> '';
 CREATE INDEX IF NOT EXISTS idx_notifications_user  ON notifications(user_id, read);
 `);
 }

@@ -57,6 +57,8 @@ export const api = {
     const qs = new URLSearchParams(params || {}).toString();
     return request(`/problems/social-discovery${qs ? `?${qs}` : ""}`);
   },
+  importSocialProblems: (payload, token) =>
+    request("/problems/social-discovery/import", { method: "POST", body: payload, token }),
   listComments: (problemId, token) => request(`/problems/${problemId}/comments`, { token }),
   postComment: (problemId, payload, token) =>
     request(`/problems/${problemId}/comments`, { method: "POST", body: payload, token }),

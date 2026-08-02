@@ -236,6 +236,11 @@ export default function ProblemDetail() {
           ) : (
             <p style={styles.desc}>{problem.description}</p>
           )}
+          {problem.source_url && (
+            <a href={problem.source_url} target="_blank" rel="noopener noreferrer" style={styles.sourceAttribution}>
+              Originally from {problem.source_name || "the web"}{problem.source_posted_at ? ` - ${problem.source_posted_at}` : ""}
+            </a>
+          )}
           {problem.trendScore > 10 && (
             <div style={{ marginTop: 12 }}>
               <span style={{ ...styles.category, background: "var(--spark-soft)", color: "var(--ink)", fontWeight: 700 }}>
@@ -1058,6 +1063,13 @@ const styles = {
   meta: { fontSize: 13, color: "var(--text-dim)", marginBottom: 16 },
   desc: { fontSize: 15.5, lineHeight: 1.6, color: "var(--text)" },
   editedTag: { fontStyle: "italic", color: "var(--text-dim)" },
+  sourceAttribution: {
+    display: "inline-flex",
+    marginTop: 10,
+    fontSize: 13,
+    fontWeight: 700,
+    color: "var(--build)",
+  },
   problemActions: { marginTop: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
   commitmentsBox: {
     border: "1.5px solid var(--build)", borderRadius: 4, padding: "14px 18px",
