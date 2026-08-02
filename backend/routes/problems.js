@@ -630,8 +630,9 @@ router.get("/social-discovery", optionalAuth, async (req, res) => {
     }
   }
 
-  const results = await discoverSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
-  if (!results) return res.json({ results: [], grouped: {}, searched: false });
+  const discovery = await discoverSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+  if (!discovery) return res.json({ results: [], grouped: {}, searched: false });
+  const results = discovery.results || [];
 
   await db
     .prepare(
@@ -642,7 +643,7 @@ router.get("/social-discovery", optionalAuth, async (req, res) => {
     )
     .run(cacheKey, JSON.stringify(results));
 
-  res.json({ results, grouped: groupSocialDiscoveries(results), searched: true, cached: false });
+  res.json({ results, grouped: groupSocialDiscoveries(results), searched: true, cached: false, agentTrace: discovery.trace });
 });
 router.post("/assist", optionalAuth, async (req, res) => {
   const description = String(req.body.description || req.body.text || "").trim();

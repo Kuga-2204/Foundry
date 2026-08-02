@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { Agent, AgentWorkflow } from "./agentic.js";
 
 // Second-pass matching judge. lib/match.js does cheap keyword recall on every
 // keystroke; that is deliberately generous and lets false positives through
@@ -336,29 +337,57 @@ async function discoverFromSource(categories, source, perCategory) {
   return cleaned;
 }
 
+const socialDiscoveryWorkflow = new AgentWorkflow({
+  name: "social-problem-discovery",
+  agents: [
+    new Agent({
+      name: "DiscoveryPlanner",
+      instructions: "Normalize category scope, source list, and per-category limits before any search runs.",
+      run: async (context) => ({
+        ...context,
+        categories: [...new Set((context.categories || []).filter(Boolean))],
+        sources: context.sources || SOCIAL_SOURCES,
+        perCategory: Math.max(1, Number(context.perCategory || 1)),
+      }),
+    }),
+    new Agent({
+      name: "SourceScoutSwarm",
+      instructions: "Run one web-search scout per source in parallel. Each scout only searches its assigned source.",
+      run: async (context) => {
+        const batches = await Promise.all(
+          context.sources.map(async (source) => {
+            try {
+              return await discoverFromSource(context.categories, source, context.perCategory);
+            } catch (err) {
+              console.error(`social discovery failed for ${source.name}:`, err.message);
+              return [];
+            }
+          })
+        );
+        return { ...context, scoutResults: batches.flat() };
+      },
+    }),
+    new Agent({
+      name: "EvidenceVerifier",
+      instructions: "Deduplicate URLs, keep source-host-verified items, and return clean problem signals.",
+      run: async (context) => {
+        const seen = new Set();
+        const results = (context.scoutResults || []).filter((item) => {
+          const key = `${item.source}:${item.url}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        return { ...context, results };
+      },
+    }),
+  ],
+});
+
 export async function discoverSocialProblems(categories, { perCategory = 1, sources = SOCIAL_SOURCES } = {}) {
   if (!client) return null;
-
-  const scopedCategories = [...new Set((categories || []).filter(Boolean))];
-  const batches = await Promise.all(
-    sources.map(async (source) => {
-      try {
-        return await discoverFromSource(scopedCategories, source, perCategory);
-      } catch (err) {
-        console.error(`social discovery failed for ${source.name}:`, err.message);
-        return [];
-      }
-    })
-  );
-  const results = batches.flat();
-
-  const seen = new Set();
-  return results.filter((item) => {
-    const key = `${item.source}:${item.url}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const run = await socialDiscoveryWorkflow.run({ categories, perCategory, sources });
+  return { results: run.results || [], trace: run.trace };
 }
 // Judge a keyword shortlist. Returns a Map of startup_id -> {verdict, reason},
 // or null when the agent is off or the call did not produce a usable answer.
