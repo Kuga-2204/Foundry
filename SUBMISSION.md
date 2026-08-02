@@ -1,81 +1,99 @@
-# Solvyard: submission guide
+# Solvyard
 
-Solvyard answers one question: **is there already a startup solving my problem?**
+**Is there already a startup solving my problem?**
 
-You describe a frustration in your own words. Solvyard matches you to a startup
-that solves it. If nothing does, the problem is listed publicly so others can
-vote and follow it, startups can see the demand and commit to building a fix,
-and everyone waiting gets notified when it ships. Reviews are restricted to
-people who actually had the problem.
+That's the whole product. You describe something annoying about your day in
+your own words, and Solvyard tells you who already fixes it. If nobody does,
+your problem gets listed, other people vote on it, and startups can see there's
+a queue of people waiting. When someone finally builds it, everyone who voted
+hears about it first.
 
-This file points to the code that matters, how to run it, and exactly what is
-sample data or depends on an external service.
-
----
-
-## Start here: the three files that carry the idea
-
-### `backend/lib/agent.js`
-The matching agent, and the most interesting file in the repo.
-
-Keyword matching alone is too generous: it surfaced a design-to-code tool for a
-rent-splitting problem because both texts contained "turn" and "about". This
-file re-reads the keyword shortlist against the problem in context and rules on
-each candidate as `solves`, `adjacent` or `unrelated`, then writes the
-one-sentence reason shown on each match card.
-
-It also handles the cold-start case. When nothing in the directory solves the
-problem, `searchWeb()` runs a live web search and returns real products with
-working links. It is prompted and filtered to return a company's own home page,
-never a review site or a roundup, and `tidyUrl()` rejects the ones that slip
-through.
-
-Both paths degrade safely: with no `OPENAI_API_KEY` set, or on any API error,
-every export no-ops and matching falls back to plain keyword ranking. The site
-never breaks because the model is unavailable.
-
-### `backend/routes/problems.js`
-The core API, and where the two matching stages are wired together.
-
-- `matchesForProblem()` runs keyword recall, then the agent, and caches the
-  rulings in `problem_match_verdicts`.
-- `GET /:id/web-matches` is the web fallback, on its own route so the page can
-  render before a slow search finishes.
-- `prefetchWebMatches()` starts that search in the background the moment a
-  problem is posted, so nobody waits on it. A visitor gets cached results in
-  under half a second instead of roughly twenty.
-- The rest of the problem lifecycle: posting, voting, following, a startup
-  committing to build, and marking it shipped.
-
-### `frontend/src/pages/ProblemDetail.jsx`
-Where all of it becomes visible: the matched startups with the agent's written
-reasons, the separate "Also found on the web" section, solutions, stake-gated
-reviews, and the discussion thread.
+This file is for reviewers. It covers what to look at, how to run it, and what
+isn't finished.
 
 ---
 
-## The rest of the important code
+## The interesting part
 
-| Path | What it contains |
-| --- | --- |
-| `backend/lib/match.js` | Stage one. Cheap keyword recall over startup problem statements, deliberately generous because the agent filters it afterwards. Runs on every keystroke; the agent never does. |
-| `backend/db/index.js` | The full Postgres schema, created on first run. Also a small adapter that lets the app speak one query dialect over `pg`. |
-| `backend/lib/stake.js` | The review eligibility rule: only people who posted or voted on a problem may review its solutions. This is what stops a startup reviewing itself. |
-| `backend/lib/moderation.js` | Report escalation. Three reports hide a piece of content and give its author a strike; strikes escalate to a suspension and then a ban. |
-| `backend/routes/reports.js` | Accepts reports, refuses self-reports and duplicates. |
-| `backend/middleware/auth.js` | JWT auth, and the gate that blocks suspended or banned accounts from writing. |
-| `backend/lib/anon.js` | Anonymous posting with a stable per-user handle, so an anonymous poster keeps one identity without revealing who they are. |
-| `frontend/src/pages/PostProblem.jsx` | Posting, including the live check that searches the directory while you type and warns you if the problem is already listed. |
-| `backend/db/seed.js` | The 12 sample startups. See the sample data note below. |
-| `PRODUCT.md` | The full product specification. |
+Word matching is a terrible way to do this, and we found that out the hard way.
+
+Someone typed "splitting rent with flatmates always turns into an argument" and
+got recommended a design-to-code tool for developers, because both texts
+happened to contain "turn" and "about". The same problem also pulled in a
+medication reminder app, on the strength of "nobody" and "track".
+
+So matching happens in two stages now.
+
+**`backend/lib/match.js`** does the fast, dumb part. It scores every startup by
+word overlap and casts a wide net on purpose, because it runs on every keystroke
+while you type and needs to be instant. It's allowed to be wrong.
+
+**`backend/lib/agent.js`** is the part worth reading. It takes that messy
+shortlist, reads it against the actual problem, and decides which candidates
+genuinely solve it. Then it writes the sentence you see on each card. On the
+rent example it kept SplitFair, threw out the design tool, and explained why in
+one line: *"It is a design-to-code handoff tool for software teams, not a way to
+split rent or track household bills."*
+
+The same file handles the harder case, which is when nothing in our directory
+fits. It searches the live web and comes back with real products. Ask it about
+forgotten subscriptions and you get Rocket Money and Copilot Money. Ask about
+files not syncing to your phone and you get Dropbox, Google Drive and OneDrive.
+Real companies, real links, checked at the moment you ask.
+
+Getting that trustworthy took more work than expected. It has to search rather
+than answer from memory, or it recommends products that shut down years ago. It
+has to link the company's own site instead of some listicle about the company.
+`tidyUrl()` throws out anything pointing at a review site, an app store, Reddit
+or Wikipedia, and strips the tracking junk off what's left.
+
+The whole thing is optional. No API key set, or the API is down, and every
+function quietly returns nothing and you get plain keyword matching instead.
+The site doesn't break because a model was unavailable.
+
+---
+
+## Where everything lives
+
+**`backend/routes/problems.js`** is the biggest file and the centre of the app.
+Posting, voting, following, a startup committing to build something, marking it
+shipped. It's also where the two matching stages get wired together, and where
+`prefetchWebMatches()` lives. That last one starts the web search the second a
+problem is posted instead of when someone opens it, which is the difference
+between waiting twenty seconds and waiting half of one.
+
+**`frontend/src/pages/ProblemDetail.jsx`** is where you actually see all of it.
+Matches with their explanations, the separate web results section, solutions,
+reviews, comments.
+
+**`frontend/src/pages/PostProblem.jsx`** handles posting, including the live
+check that runs while you're still typing and warns you if someone already
+posted the same thing.
+
+**`backend/db/index.js`** has the full database schema. It builds itself on
+first run, so there are no migrations to apply.
+
+Three smaller files carry rules that matter more than their size suggests:
+
+- `backend/lib/stake.js` decides who's allowed to review a solution. Only people
+  who posted or voted on the problem. This is what stops a startup from
+  reviewing itself.
+- `backend/lib/moderation.js` runs report escalation. Three reports hide
+  something and give its author a strike. Strikes build up into a suspension,
+  then a ban.
+- `backend/lib/anon.js` lets people post anonymously while keeping one steady
+  handle, so an anonymous poster still has a consistent identity without
+  exposing who they are.
+
+`PRODUCT.md` has the full spec if you want the reasoning behind any of it.
 
 ---
 
 ## Running it
 
-Needs Node 18+ and a Supabase Postgres database.
+You need Node 18 or newer and a Supabase Postgres database.
 
-**1. Backend, on port 4000.** Creates its schema automatically on first run.
+Backend first, on port 4000:
 
 ```
 cd backend
@@ -83,15 +101,18 @@ npm install
 cp .env.example .env
 ```
 
-Then edit `.env` and set `SUPABASE_DB_URL` and `JWT_SECRET`. Both are required.
-`OPENAI_API_KEY` is optional; see the table below for what changes without it.
+Open `.env` and fill in `SUPABASE_DB_URL` and `JWT_SECRET`. Those two are
+required and nothing starts without them. `OPENAI_API_KEY` is optional.
 
 ```
-npm run seed    # optional, loads the 12 sample startups so matching has data
+npm run seed
 npm start
 ```
 
-**2. Frontend, on port 5173.** Proxies `/api/*` to the backend.
+The seed step loads 12 sample startups. Skip it and matching has nothing to
+match against.
+
+Frontend second, on port 5173:
 
 ```
 cd frontend
@@ -99,65 +120,71 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Then open `http://localhost:5173`.
 
-### Seeing the matching agent work
+### Two things to try
 
-1. Sign up, go to **Post**, and enter:
-   *"Splitting rent with flatmates always turns into an argument. Every month we
-   fight about who used what."*
-   Expect a single match, **SplitFair**, with a sentence written about your
-   specific problem. The suggestions shown while you are still typing are
-   unfiltered keyword matches and will include a false positive; the agent
-   removes it once the problem is posted. That difference is the point.
-2. Now post:
-   *"I keep forgetting which subscriptions I am paying for."*
-   Nothing in the directory solves this, so the web fallback runs and returns
-   real products such as Rocket Money or Copilot Money, in a clearly separated
-   section.
+Sign up, hit **Post**, and type this:
 
----
+> Splitting rent with flatmates always turns into an argument. Every month we
+> fight about who used what.
 
-## Sample data, external services, and what is not built
+Watch the suggestions while you're typing. You'll see a false positive in
+there. Post it, and it's gone, with SplitFair left behind and a sentence
+explaining why it fits. That gap between the two is the agent doing its job.
 
-Stated plainly, as required.
+Now post this one:
 
-### Sample data
-- **The 12 startups in the directory are invented sample data**, loaded by
-  `backend/db/seed.js`. Their `website` fields point at `example.com` and are
-  not real companies. They exist so matching has something to match against.
-  Real startups would sign up and list themselves through the app.
-- Products returned in the **"Also found on the web"** section are the
-  opposite: those are real companies found by a live search, and their links go
-  to their actual sites.
+> I keep forgetting which subscriptions I am paying for.
 
-### External services
-| Service | Used for | Without it |
-| --- | --- | --- |
-| Supabase Postgres | All application data | The backend will not start. Required. |
-| OpenAI API | The matching agent and web search | Everything still works. Matching silently falls back to keyword ranking, and the web section never appears. No crash, no error shown to the user. |
-| Supabase Storage | Photo and video attachments on problems | Posting still works; attaching media does not. |
-| SMTP | Password reset and digest emails | Not configured by default. `backend/lib/email.js` falls back to a transport that prints the message, including any reset link, to the server console. Nothing is sent over the network in local development. |
-
-### Not built
-- **There are no automated tests.** Nothing in this repo is test-covered.
-  Everything was verified by hand against a live database and a live API.
-- Notifications are in-app only and are polled once a minute. There is no
-  push or websocket delivery.
-- The web search runs about twenty seconds when cold. It is cached for 30 days
-  per problem, and prefetched in the background at post time so a reader
-  normally never waits on it. On a serverless host that cuts off work after the
-  response is sent, the prefetch may not complete and the first reader falls
-  back to waiting for the on-demand search.
-- The keyword matcher is English-only and uses word overlap, not embeddings.
+Nothing in the directory handles subscriptions, so it goes out to the web
+instead and comes back with real products in their own section. Click the
+links. They should go to actual companies.
 
 ---
 
-## A note on credentials
+## What's fake, what's borrowed, what's missing
 
-`backend/.env` holds all secrets and is gitignored. `backend/.env.example`
-contains placeholders only and is the file to copy.
+**The 12 startups aren't real.** They're sample data from
+`backend/db/seed.js` and their websites all point at `example.com`. They exist
+so matching has something to chew on. In a live product these would be real
+companies who signed up and listed themselves.
 
-If you are reviewing the commit history rather than the current tree, note that
-earlier commits of `backend/.env.example` contained real Supabase values that
-have since been replaced with placeholders. Those credentials are being rotated.
+The products in the "Also found on the web" section are the opposite. Those are
+genuine companies found by searching at that moment, and the links go to their
+actual sites.
+
+**There are no tests.** None. Everything here was checked by hand against a
+live database and a live API. It's the most obvious gap in the repo and we'd
+rather say so than have you go looking.
+
+**What it depends on:**
+
+Supabase Postgres holds everything and the backend won't start without it.
+Supabase Storage handles photo and video uploads, and without it you can still
+post, just not attach anything. The OpenAI API powers the agent, and without a
+key the site works fine but falls back to keyword matching with no explanations
+and no web section. Email goes through SMTP if you configure it, and if you
+don't, `backend/lib/email.js` prints messages to the server console instead, so
+password resets are still testable without a mail account.
+
+**Rough edges we know about:**
+
+Notifications only exist inside the app and get polled once a minute, so
+there's no push or websockets. A cold web search takes about twenty seconds,
+which is why it's cached for 30 days and prefetched at post time. On a
+serverless host that kills work after the response is sent, that prefetch might
+not finish and the first person to open the problem waits for the live search
+instead. The keyword matcher only works in English and compares words rather
+than meaning.
+
+---
+
+## Credentials
+
+Secrets live in `backend/.env`, which is gitignored. `backend/.env.example` has
+placeholders only.
+
+If you're reading through the commit history, older versions of
+`backend/.env.example` had real Supabase values in them by mistake. They've been
+replaced with placeholders and the credentials are being rotated.
