@@ -69,9 +69,13 @@ export default function Problems() {
     setSocialError("");
     setSocialMessage("");
     try {
-      const data = await api.importSocialProblems({ category }, token);
+      const command =
+        category === "All"
+          ? "Import the latest social problems for all categories, one per category."
+          : `Import the latest ${category} social problems, two per category.`;
+      const data = await api.runSocialAgentCommand({ command }, token);
       setSocialDiscovery({ results: data.discovered || [], grouped: data.grouped || {}, searched: true, cached: false, agentTrace: data.trace });
-      setSocialMessage(`Imported ${data.imported?.length || 0} new problem${(data.imported?.length || 0) === 1 ? "" : "s"}.`);
+      setSocialMessage(`Agent imported ${data.imported?.length || 0} new problem${(data.imported?.length || 0) === 1 ? "" : "s"}.`);
       await load();
     } catch (err) {
       setSocialError(err.message);
@@ -214,7 +218,7 @@ export default function Problems() {
               <h2 style={styles.socialTitle}>Latest problems people are talking about</h2>
             </div>
             <button className="btn btn-sm" type="button" onClick={importLatestSocialProblems} disabled={socialLoading}>
-              {socialLoading ? "Searching" : "Refresh"}
+              {socialLoading ? "Agent running" : "Run agent"}
             </button>
           </div>
           {socialMessage && <p style={styles.socialMuted}>{socialMessage}</p>}

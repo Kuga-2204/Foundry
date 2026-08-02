@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { initDb } from "../db/index.js";
-import { importSocialProblems } from "../lib/socialPostingAgent.js";
+import { runSocialImportCommand } from "../lib/socialPostingAgent.js";
 
 const CATEGORIES = [
   "General",
@@ -33,12 +33,16 @@ await initDb();
 
 const categories = selectedCategories();
 const perCategory = Number(argValue("per-category", categories.length === 1 ? "2" : "1"));
-const result = await importSocialProblems(categories, { perCategory });
+const command =
+  argValue("command") ||
+  `Import latest ${categories.length === CATEGORIES.length ? "all categories" : categories.join(", ")} social problems, ${perCategory} per category.`;
+const result = await runSocialImportCommand(command);
 
 console.log(
   JSON.stringify(
     {
-      categories,
+      command,
+      commandPlan: result.commandPlan,
       discovered: result.discovered.length,
       imported: result.imported.length,
       skipped: result.skipped.length,

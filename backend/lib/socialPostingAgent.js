@@ -3,6 +3,51 @@ import { Agent, AgentWorkflow } from "./agentic.js";
 import { discoverSocialProblems } from "./agent.js";
 
 const RADAR_EMAIL = "radar@solvyard.local";
+const CATEGORIES = [
+  "General",
+  "Health & Wellness",
+  "Productivity",
+  "Finance",
+  "Sustainability",
+  "Education",
+  "Home & Living",
+  "Transport",
+  "Community",
+  "Developer Tools",
+];
+
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+export function parseSocialImportCommand(command, defaults = {}) {
+  const text = normalizeText(command);
+  if (!text) throw new Error("Command is required.");
+
+  const lower = text.toLowerCase();
+  let categories = CATEGORIES.filter((category) => lower.includes(category.toLowerCase()));
+  if (lower.includes("all categories") || lower.includes("every category")) categories = CATEGORIES;
+  if (categories.length === 0 && Array.isArray(defaults.categories) && defaults.categories.length) {
+    categories = defaults.categories.filter((category) => CATEGORIES.includes(category));
+  }
+  if (categories.length === 0) categories = CATEGORIES;
+
+  const perCategoryMatch =
+    lower.match(/(?:per[-\s]?category|each category)\D*(\d+)/) ||
+    lower.match(/(\d+)\s*(?:per[-\s]?category|each category)/);
+  const parsedLimit = perCategoryMatch ? Number(perCategoryMatch[1]) : NaN;
+  const perCategory =
+    Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(parsedLimit, 5)
+      : Number(defaults.perCategory || (categories.length === 1 ? 2 : 1));
+
+  return {
+    command: text,
+    categories,
+    perCategory,
+    dryRun: /\b(dry run|preview only|do not post|don't post)\b/.test(lower),
+  };
+}
 
 function postDescription(item) {
   const lines = [item.description];
@@ -67,6 +112,19 @@ const socialPostingWorkflow = new AgentWorkflow({
   name: "social-problem-posting",
   agents: [
     new Agent({
+      name: "CommandInterpreterAgent",
+      instructions: "Turn an admin/user command into a concrete social import plan.",
+      run: async (context) => {
+        const plan = context.command
+          ? parseSocialImportCommand(context.command, context)
+          : parseSocialImportCommand(
+              `Import latest ${context.categories?.join(", ") || "all categories"} social problems, ${context.perCategory || 1} per category.`,
+              context
+            );
+        return { ...context, ...plan, commandPlan: plan };
+      },
+    }),
+    new Agent({
       name: "DiscoverProblemsAgent",
       instructions: "Run the social discovery workflow and collect current credited problem signals.",
       run: async (context) => {
@@ -105,6 +163,9 @@ const socialPostingWorkflow = new AgentWorkflow({
       name: "PostingAgent",
       instructions: "Create Solvyard problem posts with original source attribution fields.",
       run: async (context) => {
+        if (context.dryRun) {
+          return { ...context, imported: [], failed: [], radarUserId: null };
+        }
         const userId = await ensureRadarUser();
         const imported = [];
         const failed = [];
@@ -125,6 +186,22 @@ const socialPostingWorkflow = new AgentWorkflow({
 export async function importSocialProblems(categories, { perCategory = 1, sources } = {}) {
   const run = await socialPostingWorkflow.run({ categories, perCategory, sources });
   return {
+    imported: run.imported || [],
+    skipped: run.skipped || [],
+    failed: run.failed || [],
+    discovered: run.discovered || [],
+    trace: {
+      workflow: run.trace.workflow,
+      steps: run.trace.steps,
+      discovery: run.discoveryTrace,
+    },
+  };
+}
+
+export async function runSocialImportCommand(command, { sources } = {}) {
+  const run = await socialPostingWorkflow.run({ command, sources });
+  return {
+    commandPlan: run.commandPlan,
     imported: run.imported || [],
     skipped: run.skipped || [],
     failed: run.failed || [],

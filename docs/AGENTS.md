@@ -71,11 +71,15 @@ Cached read endpoint:
 GET /api/problems/social-discovery?category=Productivity
 ```
 
-Fresh discovery with import through the API:
+Fresh command-driven import through the API:
 
 ```http
-GET /api/problems/social-discovery?category=Productivity&import=true
-POST /api/problems/social-discovery/import
+POST /api/problems/social-discovery/command
+Content-Type: application/json
+
+{
+  "command": "Import the latest Productivity social problems, two per category."
+}
 ```
 
 The API route is still backend-owned. The frontend does not call OpenAI directly.
@@ -86,9 +90,17 @@ Defined in `backend/lib/socialPostingAgent.js`.
 
 Agents:
 
+- `CommandInterpreterAgent`: converts a user/admin command into categories, limits, and posting intent.
 - `DiscoverProblemsAgent`: calls the social discovery workflow and collects public problem signals.
 - `DedupeAgent`: skips items already imported by original source URL or exact title/category.
 - `PostingAgent`: inserts first-class Solvyard problem rows with attribution fields.
+
+CLI command entrypoint:
+
+```bash
+cd backend
+npm run agent:import-social -- --command="Import the latest Productivity social problems, two per category."
+```
 
 Imported problems are posted by the system user:
 

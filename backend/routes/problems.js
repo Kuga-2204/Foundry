@@ -13,7 +13,7 @@ import { fetchProblemMedia, upload, uploadProblemMedia } from "../lib/uploads.js
 import { moderate } from "../lib/moderate.js";
 import { track } from "../lib/track.js";
 import { agentEnabled, discoverSocialProblems, judgeMatches, searchWeb, SOCIAL_DISCOVERY_TTL_MS, VERDICT_TTL_MS, WEB_TTL_MS } from "../lib/agent.js";
-import { importSocialProblems } from "../lib/socialPostingAgent.js";
+import { importSocialProblems, runSocialImportCommand } from "../lib/socialPostingAgent.js";
 
 const router = Router();
 
@@ -679,6 +679,16 @@ router.post("/social-discovery/import", requireAuth, async (req, res) => {
   if (categories.length === 0) return res.status(400).json({ error: "Unknown category." });
 
   const importRun = await importSocialProblems(categories, { perCategory: requested === "All" ? 1 : 2 });
+  res.json({ ...importRun, grouped: groupSocialDiscoveries(importRun.discovered || []), searched: true });
+});
+
+router.post("/social-discovery/command", requireAuth, async (req, res) => {
+  if (!agentEnabled()) return res.json({ imported: [], skipped: [], failed: [], searched: false });
+
+  const command = String(req.body.command || "").trim();
+  if (!command) return res.status(400).json({ error: "Agent command is required." });
+
+  const importRun = await runSocialImportCommand(command);
   res.json({ ...importRun, grouped: groupSocialDiscoveries(importRun.discovered || []), searched: true });
 });
 router.post("/assist", optionalAuth, async (req, res) => {

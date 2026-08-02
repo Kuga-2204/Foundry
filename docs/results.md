@@ -21,7 +21,7 @@ The benchmark focuses on the main shipped workflow:
 2. Run backend syntax checks for agent and route modules.
 3. Build the production frontend bundle.
 4. Read cached social discovery results through the public backend endpoint.
-5. Run the backend social posting agent once for a single category to confirm that discoveries become credited Solvyard posts.
+5. Run the backend social posting agent from a natural-language command to confirm that discoveries become credited Solvyard posts.
 
 The tests are intentionally deterministic. They do not call live OpenAI or Supabase. Live agent imports are measured separately because external search latency depends on network and provider behavior.
 
@@ -37,17 +37,18 @@ Result:
 
 | Metric | Value |
 | --- | ---: |
-| Tests | 4 |
-| Passed | 4 |
+| Tests | 5 |
+| Passed | 5 |
 | Failed | 0 |
-| Duration reported by Node test runner | 223.1854 ms |
+| Duration reported by Node test runner | 172.1529 ms |
 | End-to-end command duration | 1662.7 ms |
 
 Covered passing cases:
 
 - `AgentWorkflow` runs agents in order and preserves shared context.
 - `Agent` and `AgentWorkflow` reject invalid construction inputs.
-- Social posting workflow includes discovery, dedupe, and posting agents.
+- Social posting workflow includes command interpretation, discovery, dedupe, and posting agents.
+- Social import is exposed as a user-commanded agent action across backend, CLI, and frontend.
 - Problem schema and UI preserve original source attribution.
 
 No failing evaluation cases are included in `tests/evaluation.test.ts`.
@@ -92,7 +93,7 @@ Command:
 
 ```bash
 cd backend
-npm.cmd run agent:import-social -- --category=Productivity --per-category=1
+npm.cmd run agent:import-social -- --command="Import the latest Productivity social problems, one per category."
 ```
 
 Result from the measured run:
@@ -110,6 +111,7 @@ Agent trace:
 
 | Agent | Responsibility | Duration |
 | --- | --- | ---: |
+| `CommandInterpreterAgent` | Convert the command into a category/limit import plan | <1 ms |
 | `DiscoverProblemsAgent` | Run social discovery and collect credited public problem signals | 34406 ms |
 | `DedupeAgent` | Skip already-imported source URLs and exact title/category duplicates | 2180 ms |
 | `PostingAgent` | Create Solvyard problem posts with source attribution fields | 905 ms |

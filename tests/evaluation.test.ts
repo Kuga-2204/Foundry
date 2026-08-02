@@ -40,15 +40,31 @@ test("Agent and AgentWorkflow validate required construction inputs", () => {
   assert.throws(() => new AgentWorkflow({ name: "Empty", agents: [] }), /at least one agent/);
 });
 
-test("social posting workflow includes discovery, dedupe, and posting agents", async () => {
+test("social posting workflow includes command interpretation, discovery, dedupe, and posting agents", async () => {
   const source = await readFile(new URL("../backend/lib/socialPostingAgent.js", import.meta.url), "utf8");
 
+  assert.match(source, /CommandInterpreterAgent/);
+  assert.match(source, /parseSocialImportCommand/);
+  assert.match(source, /runSocialImportCommand/);
   assert.match(source, /DiscoverProblemsAgent/);
   assert.match(source, /DedupeAgent/);
   assert.match(source, /PostingAgent/);
   assert.match(source, /sourceUrlExists/);
   assert.match(source, /exactProblemExists/);
   assert.match(source, /Solvyard Radar/);
+});
+
+test("social import is exposed as a user-commanded agent action", async () => {
+  const routes = await readFile(new URL("../backend/routes/problems.js", import.meta.url), "utf8");
+  const script = await readFile(new URL("../backend/scripts/import-social-problems.js", import.meta.url), "utf8");
+  const api = await readFile(new URL("../frontend/src/api.js", import.meta.url), "utf8");
+  const page = await readFile(new URL("../frontend/src/pages/Problems.jsx", import.meta.url), "utf8");
+
+  assert.match(routes, /social-discovery\/command/);
+  assert.match(routes, /runSocialImportCommand\(command\)/);
+  assert.match(script, /argValue\("command"\)/);
+  assert.match(api, /runSocialAgentCommand/);
+  assert.match(page, /Run agent/);
 });
 
 test("problem schema and UI preserve original source attribution", async () => {
